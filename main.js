@@ -1,0 +1,1120 @@
+//Amiga module player by Glacc
+//
+//Unsupported effects :
+//
+//	E3x	Set glissando on/off
+//	E4x Set vibrato waveform
+//	E5x	Set finetune value
+//	E7x Set tremolo waveform
+//	EFx	Invert loop
+//
+
+var bufferSize = 1024;
+
+var stereomul = .75;
+var stereo = false;
+
+var amigaFreq = 7093789.2;//7158728;
+var interpolation = true;
+var amigaFreqLimits = true;
+var smoothScrolling = false;
+
+var AudioContext = window.AudioContext || window.webkitAudioContext;
+var audioCtx = new AudioContext();
+var gainNode = audioCtx.createGain();
+gainNode.gain.value = 15;
+gainNode.connect(audioCtx.destination);
+var scriptNode = audioCtx.createScriptProcessor(bufferSize, 0, 2);
+var smprate = audioCtx.sampleRate;
+console.log("Buffer size: " + scriptNode.bufferSize);
+console.log("Sample rate: " + audioCtx.sampleRate);
+console.log("Max FPS: " + smprate/bufferSize);
+
+var songname_canvas,samples_canvas;
+var pattern_canvas = document.createElement("canvas");
+
+var a = 0;
+
+var loaded = 0;
+var targetfile = "";
+var init = 0;
+var playing = 0;
+var filebuffer;
+var numofchannels = 4;
+
+var songname;
+
+var numofpatterns;
+var patterndata = [];
+var patternorder = [];
+var samples = [];
+var channels = [];
+
+var scopePos = 0;
+var scopeData = [];
+
+var volume = 0.2;
+var volL = 0;
+var volR = 0;
+
+var currow = 0;
+var curpos = 0;
+var oldpos = 128;
+var patbrk = -1;
+var patjmp = -1;
+var patdelay = 0;
+var patrep = 0;
+var reppos = 0;
+var repto = -1;
+var tick = 0;
+var rstpos = 0;
+
+var spd;
+var tempo;
+
+var init = 0;
+var playing = 0;
+var timer_0 = 0;
+var t0 = 0;
+
+var logrow = false;
+
+//var periodTableFT2 = [1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907, 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453, 428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226, 214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113, 107, 101, 95, 90, 85, 80, 76, 71, 67, 64, 60, 57];
+
+var noteText = ["Ｃ－","Ｃ＃","Ｄ－","Ｄ＃","Ｅ－","Ｆ－","Ｆ＃","Ｇ－","Ｇ＃","Ａ－","Ａ＃","Ｂ－"];
+var hexTextA = ["0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"];
+var hexTextB = ["０","１","２","３","４","５","６","７","８","９","Ａ","Ｂ","Ｃ","Ｄ","Ｅ","Ｆ"];
+var pvrow = -1;
+var pvdelay = 0;
+var pvupdated = false;
+
+var finetunemul = 37;
+
+var formatTag = [
+	"1CHN", "2CHN", "3CHN", "4CHN", "5CHN", "6CHN", "7CHN", "8CHN",
+	"9CHN", "10CH", "11CH", "12CH", "13CH", "14CH", "15CH", "16CH",
+	"17CH", "18CH", "19CH", "20CH", "21CH", "22CH", "23CH", "24CH",
+	"25CH", "26CH", "27CH", "28CH", "29CH", "30CH", "31CH", "32CH"
+	];
+
+var periodTableMod = [
+    856,808,762,720,678,640,604,570,538,508,480,453,
+    428,404,381,360,339,320,302,285,269,254,240,226,
+    214,202,190,180,170,160,151,143,135,127,120,113,0,
+    850,802,757,715,674,637,601,567,535,505,477,450,
+    425,401,379,357,337,318,300,284,268,253,239,225,
+    213,201,189,179,169,159,150,142,134,126,119,113,0,
+    844,796,752,709,670,632,597,563,532,502,474,447,
+    422,398,376,355,335,316,298,282,266,251,237,224,
+    211,199,188,177,167,158,149,141,133,125,118,112,0,
+    838,791,746,704,665,628,592,559,528,498,470,444,
+    419,395,373,352,332,314,296,280,264,249,235,222,
+    209,198,187,176,166,157,148,140,132,125,118,111,0,
+    832,785,741,699,660,623,588,555,524,495,467,441,
+    416,392,370,350,330,312,294,278,262,247,233,220,
+    208,196,185,175,165,156,147,139,131,124,117,110,0,
+    826,779,736,694,655,619,584,551,520,491,463,437,
+    413,390,368,347,328,309,292,276,260,245,232,219,
+    206,195,184,174,164,155,146,138,130,123,116,109,0,
+    820,774,730,689,651,614,580,547,516,487,460,434,
+    410,387,365,345,325,307,290,274,258,244,230,217,
+    205,193,183,172,163,154,145,137,129,122,115,109,0,
+    814,768,725,684,646,610,575,543,513,484,457,431,
+    407,384,363,342,323,305,288,272,256,242,228,216,
+    204,192,181,171,161,152,144,136,128,121,114,108,0,
+    907,856,808,762,720,678,640,604,570,538,508,480,
+    453,428,404,381,360,339,320,302,285,269,254,240,
+    226,214,202,190,180,170,160,151,143,135,127,120,0,
+    900,850,802,757,715,675,636,601,567,535,505,477,
+    450,425,401,379,357,337,318,300,284,268,253,238,
+    225,212,200,189,179,169,159,150,142,134,126,119,0,
+    894,844,796,752,709,670,632,597,563,532,502,474,
+    447,422,398,376,355,335,316,298,282,266,251,237,
+    223,211,199,188,177,167,158,149,141,133,125,118,0,
+    887,838,791,746,704,665,628,592,559,528,498,470,
+    444,419,395,373,352,332,314,296,280,264,249,235,
+    222,209,198,187,176,166,157,148,140,132,125,118,0,
+    881,832,785,741,699,660,623,588,555,524,494,467,
+    441,416,392,370,350,330,312,294,278,262,247,233,
+    220,208,196,185,175,165,156,147,139,131,123,117,0,
+    875,826,779,736,694,655,619,584,551,520,491,463,
+    437,413,390,368,347,328,309,292,276,260,245,232,
+    219,206,195,184,174,164,155,146,138,130,123,116,0,
+    868,820,774,730,689,651,614,580,547,516,487,460,
+    434,410,387,365,345,325,307,290,274,258,244,230,
+    217,205,193,183,172,163,154,145,137,129,122,115,0,
+    862,814,768,725,684,646,610,575,543,513,484,457,
+    431,407,384,363,342,323,305,288,272,256,242,228,
+    216,203,192,181,171,161,152,144,136,128,121,114,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	];
+
+
+var periodTableExt = [
+	1712*2,1616*2,1524*2,1440*2,1356*2,1280*2,1208*2,1140*2,1076*2,1016*2,960*2,907*2,
+	1712,1616,1524,1440,1356,1280,1208,1140,1076,1016,960,907,
+    856,808,762,720,678,640,604,570,538,508,480,453,
+    428,404,381,360,339,320,302,285,269,254,240,226,
+    214,202,190,180,170,160,151,143,135,127,120,113,
+	107,101, 95, 90, 85, 80, 76, 71, 67, 64, 60, 57,0,
+	1700*2,1604*2,1514*2,1430*2,1348*2,1274*2,1202*2,1134*2,1070*2,1010*2,954*2,900*2,
+	1700,1604,1514,1430,1348,1274,1202,1134,1070,1010,954,900,
+    850,802,757,715,674,637,601,567,535,505,477,450,
+    425,401,379,357,337,318,300,284,268,253,239,225,
+    213,201,189,179,169,159,150,142,134,126,119,113,
+	107,101, 95, 90, 85, 80, 75, 71, 67, 63, 60, 57,0,
+	1688*2,1592*2,1504*2,1418*2,1340*2,1264*2,1194*2,1126*2,1064*2,1004*2,948*2,894*2,
+	1688,1592,1504,1418,1340,1264,1194,1126,1064,1004,948,894,
+    844,796,752,709,670,632,597,563,532,502,474,447,
+    422,398,376,355,335,316,298,282,266,251,237,224,
+    211,199,188,177,167,158,149,141,133,125,118,112,
+	106,100, 94, 89, 84, 79, 75, 71, 67, 63, 59, 56,0,
+	1676*2,1582*2,1492*2,1408*2,1330*2,1256*2,1184*2,1118*2,1056*2,996*2,940*2,888*2,
+	1676,1582,1492,1408,1330,1256,1184,1118,1056,996,940,888,
+    838,791,746,704,665,628,592,559,528,498,470,444,
+    419,395,373,352,332,314,296,280,264,249,235,222,
+    209,198,187,176,166,157,148,140,132,125,118,111,
+	105, 99, 94, 88, 83, 79, 74, 70, 66, 63, 59, 56,0,
+	1664*2,1570*2,1482*2,1398*2,1320*2,1246*2,1176*2,1110*2,1048*2,990*2,934*2,882*2,
+	1664,1570,1482,1398,1320,1246,1176,1110,1048,990,934,882,
+    832,785,741,699,660,623,588,555,524,495,467,441,
+    416,392,370,350,330,312,294,278,262,247,233,220,
+    208,196,185,175,165,156,147,139,131,124,117,110,
+	104, 98, 93, 88, 83, 78, 74, 70, 66, 62, 59, 55,0,
+	1652*2,1558*2,1472*2,1388*2,1310*2,1238*2,1168*2,1102*2,1040*2,982*2,926*2,874*2,
+	1652,1558,1472,1388,1310,1238,1168,1102,1040,982,926,874,
+    826,779,736,694,655,619,584,551,520,491,463,437,
+    413,390,368,347,328,309,292,276,260,245,232,219,
+    206,195,184,174,164,155,146,138,130,123,116,109,
+	103, 98, 92, 87, 82, 78, 73, 69, 65, 62, 58, 55,0,
+	1640*2,1548*2,1460*2,1378*2,1302*2,1228*2,1160*2,1094*2,1032*2,974*2,920*2,868*2,
+	1640,1548,1460,1378,1302,1228,1160,1094,1032,974,920,868,
+    820,774,730,689,651,614,580,547,516,487,460,434,
+    410,387,365,345,325,307,290,274,258,244,230,217,
+    205,193,183,172,163,154,145,137,129,122,115,109,
+	103, 97, 92, 86, 82, 77, 73, 69, 65, 61, 58, 55,0,
+	1628*2,1536*2,1450*2,1368*2,1292*2,1220*2,1150*2,1086*2,1026*2,968*2,914*2,862*2,
+	1628,1536,1450,1368,1292,1220,1150,1086,1026,968,914,862,
+    814,768,725,684,646,610,575,543,513,484,457,431,
+    407,384,363,342,323,305,288,272,256,242,228,216,
+    204,192,181,171,161,152,144,136,128,121,114,108,
+	102, 96, 91, 86, 81, 76, 72, 68, 64, 61, 57, 54,0,
+	1814*2,1712*2,1616*2,1524*2,1440*2,1356*2,1280*2,1208*2,1140*2,1076*2,1016*2,960*2,
+	1814,1712,1616,1524,1440,1356,1280,1208,1140,1076,1016,960,
+    907,856,808,762,720,678,640,604,570,538,508,480,
+    453,428,404,381,360,339,320,302,285,269,254,240,
+    226,214,202,190,180,170,160,151,143,135,127,120,
+	113,107,101, 95, 90, 85, 80, 76, 72, 68, 64, 60,0,
+	1800*2,1700*2,1604*2,1514*2,1430*2,1350*2,1272*2,1202*2,1134*2,1070*2,1010*2,954*2,
+	1800,1700,1604,1514,1430,1350,1272,1202,1134,1070,1010,954,
+    900,850,802,757,715,675,636,601,567,535,505,477,
+    450,425,401,379,357,337,318,300,284,268,253,238,
+    225,212,200,189,179,169,159,150,142,134,126,119,
+	113,106,100, 95, 90, 85, 80, 75, 71, 67, 63, 60,0,
+	1788*2,1688*2,1592*2,1504*2,1418*2,1340*2,1264*2,1194*2,1126*2,1064*2,1004*2,948*2,
+	1788,1688,1592,1504,1418,1340,1264,1194,1126,1064,1004,948,
+    894,844,796,752,709,670,632,597,563,532,502,474,
+    447,422,398,376,355,335,316,298,282,266,251,237,
+    223,211,199,188,177,167,158,149,141,133,125,118,
+	112,106,100, 94, 89, 84, 79, 75, 71, 67, 63, 59,0,
+	1774*2,1676*2,1582*2,1492*2,1408*2,1330*2,1256*2,1184*2,1118*2,1056*2,996*2,940*2,
+	1774,1676,1582,1492,1408,1330,1256,1184,1118,1056,996,940,
+    887,838,791,746,704,665,628,592,559,528,498,470,
+    444,419,395,373,352,332,314,296,280,264,249,235,
+    222,209,198,187,176,166,157,148,140,132,125,118,
+	111,105, 99, 94, 88, 83, 79, 74, 70, 66, 63, 59,0,
+	1762*2,1664*2,1570*2,1482*2,1398*2,1320*2,1246*2,1176*2,1110*2,1048*2,988*2,934*2,
+	1762,1664,1570,1482,1398,1320,1246,1176,1110,1048,988,934,
+    881,832,785,741,699,660,623,588,555,524,494,467,
+    441,416,392,370,350,330,312,294,278,262,247,233,
+    220,208,196,185,175,165,156,147,139,131,123,117,
+	110,104, 98, 93, 88, 83, 78, 74, 70, 66, 62, 59,0,
+	1750*2,1652*2,1558*2,1472*2,1388*2,1310*2,1238*2,1168*2,1102*2,1040*2,982*2,926*2,
+	1750,1652,1558,1472,1388,1310,1238,1168,1102,1040,982,926,
+    875,826,779,736,694,655,619,584,551,520,491,463,
+    437,413,390,368,347,328,309,292,276,260,245,232,
+    219,206,195,184,174,164,155,146,138,130,123,116,
+	110,103, 98, 92, 87, 82, 78, 73, 69, 65, 62, 58,0,
+	1736*2,1640*2,1548*2,1460*2,1378*2,1302*2,1228*2,1160*2,1094*2,1032*2,974*2,920*2,
+	1736,1640,1548,1460,1378,1302,1228,1160,1094,1032,974,920,
+    868,820,774,730,689,651,614,580,547,516,487,460,
+    434,410,387,365,345,325,307,290,274,258,244,230,
+    217,205,193,183,172,163,154,145,137,129,122,115,
+	109,103, 97, 92, 86, 82, 77, 73, 69, 65, 61, 58,0,
+	1724*2,1628*2,1536*2,1450*2,1368*2,1292*2,1220*2,1150*2,1086*2,1026*2,968*2,914*2,
+	1724,1628,1536,1450,1368,1292,1220,1150,1086,1026,968,914,
+    862,814,768,725,684,646,610,575,543,513,484,457,
+    431,407,384,363,342,323,305,288,272,256,242,228,
+    216,203,192,181,171,161,152,144,136,128,121,114,
+	108,102, 96, 91, 86, 81, 76, 72, 68, 64, 61, 57,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	];
+	
+var periodTable = periodTableMod;
+//from XM.TXT
+/*PeriodTab = [
+      907,900,894,887,881,875,868,862,856,850,844,838,832,826,820,814,
+      808,802,796,791,785,779,774,768,762,757,752,746,741,736,730,725,
+      720,715,709,704,699,694,689,684,678,675,670,665,660,655,651,646,
+      640,636,632,628,623,619,614,610,604,601,597,592,588,584,580,575,
+      570,567,563,559,555,551,547,543,538,535,532,528,524,520,516,513,
+      508,505,502,498,494,491,487,484,480,477,474,470,467,463,460,457];
+/*
+*/
+function getstring(dv, offset, len) {
+  var str = [];
+  for (var i = offset; i < offset+len; i++) {
+    var c = dv.getUint8(i);
+    if (c === 0) break;
+    str.push(String.fromCharCode(c));
+  }
+  return str.join('');
+}
+
+function initInfoView() {
+	var context = songname_canvas.getContext("2d");
+	context.fillStyle = "#000000";
+    context.fillRect(0, 0, songname_canvas.width, songname_canvas.height);
+	context = samples_canvas.getContext("2d");
+	context.fillStyle = "#000000";
+	context.fillRect(0, 0, samples_canvas.width, samples_canvas.height);
+	context.fillStyle = "#ffffff";
+	context.textBaseline = "middle";
+	context.font = "12px bold Arial";
+	context.textAlign = "left";
+	context.fillText("Samples: ", 0, 6);
+}
+
+function load_module() {
+	
+	var context = songname_canvas.getContext("2d");
+	context.fillStyle = "#ffffff";
+	context.textBaseline = "middle";
+	
+	var cursor = new DataView(filebuffer);
+	var offset = 0;
+	
+	//Read song name
+	songname = getstring(cursor, 0, 20);
+	console.log("Song name: "+songname);
+	document.title = "Amiga mod player - "+songname;
+	
+	var i = 0;
+	while (i<31) {
+		offset = 20+i*30;
+	/*	var finetune = cursor.getUint8(offset+24)&0xF;
+		if (finetune>=8) finetune=14-finetune;
+		var thissample = {
+			'name':		getstring(cursor, offset, 22),
+			'leng':		cursor.getUint16(offset+22)*2,
+			'finetune':	finetune,
+			'vol':		cursor.getUint8(offset+25),
+			'repeatpoint':	cursor.getUint16(offset+26, false)*2,
+			'repeatleng':	cursor.getUint16(offset+28, false)*2,
+			'data':		[]
+		};*/
+	
+		var thissample = {
+			'name':		getstring(cursor, offset, 22),
+			'leng':		cursor.getUint16(offset+22)*2,
+			'finetune':	cursor.getUint8(offset+24)&0xF,
+			'vol':		cursor.getUint8(offset+25),
+			'repeatpoint':	cursor.getUint16(offset+26, false)*2,
+			'repeatleng':	cursor.getUint16(offset+28, false)*2,
+			'data':		[]
+		};
+		console.log("Sample "+(i+1)+":");
+		console.log(thissample);
+		samples[i] = thissample;
+		i ++ ;
+	}
+	
+	//Song info
+	songleng = cursor.getUint8(950);
+	
+	//Pattern order
+	numofpatterns = 0;
+	offset = 952;
+	while (offset<1080) {
+		var patternno = cursor.getUint8(offset);
+		if (patternno > numofpatterns) numofpatterns = patternno;
+		patternorder[offset-952] = patternno;
+		offset++;
+	}
+	console.log("Number of patterns: "+numofpatterns);
+	console.log("Pattern order:");
+	console.log(patternorder);
+	var tag = getstring(cursor, 1080, 4);
+	console.log(tag);
+	
+	i = 0;
+	numofchannels=4;
+	amigaFreqLimits = true;
+	periodTable = periodTableMod;
+	finetunemul = 37;
+	while (i<32) {
+		if (formatTag[i]==tag) {
+			numofchannels = i+1;
+			amigaFreqLimits = false;
+			periodTable = periodTableExt;
+			finetunemul = 73;
+			break;
+		}
+		i++;
+	}
+	if (tag=="CD81") {
+		numofchannels = 8;
+		amigaFreqLimits = false;
+		periodTable = periodTableExt;
+		finetunemul = 73;
+	}
+	
+	var scrwidth = 164+numofchannels*100;
+	if (scrwidth<564) scrwidth=564;
+	songname_canvas.width=samples_canvas.width=scrwidth;
+	
+	initInfoView();
+	
+	context.font = "24px bold Arial";
+	context.fillStyle = "#ffffff";
+	context.textAlign = "center";
+	context.fillText(songname, songname_canvas.width/2, 24);
+	
+	//Pattern data
+	patterndata = [];
+	offset = 1084;
+	i = 0;
+	var j, k;
+	//Pattern
+	while (i<=numofpatterns) {
+		var currentpattern = [];
+		j = 0;
+		//Row
+		while (j<64) {
+			var currentrow = [];
+			k = 0;
+			//Note
+			while (k<numofchannels) {
+				var currentnote = {
+					'sample': 	0,
+					'period':	0,
+					'effect':	0
+				};
+				var upper16 = cursor.getUint16(offset, false);
+				var lower16 = cursor.getUint16(offset+2, false);
+				currentnote.sample = ((upper16&0xF000)>>8)|((lower16&0xF000)>>12);
+				currentnote.period = upper16&0x0FFF;
+				if ((currentnote.period>856||currentnote.period<113)&&currentnote.period!=0&&amigaFreqLimits) {
+					amigaFreqLimits = false;
+					periodTable = periodTableExt;
+					finetunemul = 73;
+				}
+				currentnote.effect = lower16&0x0FFF;
+				currentrow.push(currentnote);
+				offset += 4;
+				k++;
+			}
+			currentpattern.push(currentrow);
+			j++;
+		}
+		patterndata[i] = currentpattern;
+		i++;
+	}
+	console.log("Pattern data: ");
+	console.log(patterndata);
+	
+	//Sample data
+//	offset++;
+
+	context = samples_canvas.getContext("2d");
+	
+	i = 0;
+	context.strokeStyle = "#555599";
+	while (i<31) {
+		j = 0;
+		context.beginPath();
+		while (j<samples[i].leng) {
+			samples[i].data[j++] = cursor.getInt8(offset);
+			
+			if (i>=15) context.lineTo((j/samples[i].leng)*282+282, (i-15)*12+(cursor.getInt8(offset)/21)+6);
+			else  context.lineTo((j/samples[i].leng)*282, (i+1)*12+(cursor.getInt8(offset)/21)+6);
+			
+			offset++;
+		}
+		context.stroke();
+		context.fillStyle = "#ffffff";
+		
+		context.textBaseline = "middle";
+		context.font = "12px Arial";
+		context.fillStyle = "#ffffff";
+		context.textAlign = "left";
+		
+		if (i>=15) context.fillText((i+1)+" : "+samples[i].name, 282, (i-15)*12+6);
+		else context.fillText((i+1)+" : "+samples[i].name, 0, (i+1)*12+6);
+		i++;
+	}
+	console.log("Final sample data: ");
+	console.log(samples);
+	
+	console.log("Using Amiga period table: " + amigaFreqLimits);
+	
+	
+	scopeData = [];
+	
+	i = 0;
+	while (i<numofchannels) {
+		scopeData.push([]);
+		j = 0;
+		while (j<2048) {
+			scopeData[i][j]=0;
+			j++;
+		}
+		i++;
+	}
+	
+	rstpos = 0;
+	if (!amigaFreqLimits) {
+		if (cursor.getUint8(951)!=127) rstpos=cursor.getUint8(951);
+		console.log("Restart position: " + rstpos);
+	}
+	
+	loaded = 1;
+}
+
+function mixChannels() {
+	a = 0;
+	var outL = 0;
+	var outR = 0;
+	var outM = 0;
+	while (a<numofchannels) {
+		var res = 0;
+		var ch = channels[a];
+		if (ch.sample != 31 && ch.period != 0) {
+			var smp = samples[ch.sample];
+/*			if (!ch.active) {
+				ch.active = true;
+				if (ch.effect!=12) {
+					if (!ch.notechg) ch.volume=smp.vol;
+				} else ch.volume=ch.para;
+				if (ch.effect!=9&&!ch.notechg) ch.pos=0;
+				else ch.pos=ch.para*256;
+				ch.notechg = false;
+			}*/
+			
+		/*	var fineperiod = (((60-ch.note)/8)*smp.finetune)/2;
+			if (ch.arpeggioperiod!=0) ch.pos += amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)/64-fineperiod)/2/smprate;
+			else ch.pos += amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)/64-fineperiod)/2/smprate;
+		*/
+			if (ch.arpeggioperiod!=0) ch.pos += amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+			else ch.pos += amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+			
+			if (smp.repeatleng>2) {
+				while (ch.pos>=smp.repeatpoint+smp.repeatleng) ch.pos-=smp.repeatleng;
+			} else if (ch.pos>=smp.leng) {
+				ch.sample = 31;
+			}
+			
+			if (ch.pos<=smp.leng) {
+				if (interpolation) {
+					var prevdata = smp.data[Math.floor(ch.pos)-1];
+					if (Math.floor(ch.pos)-1<0) prevdata=0;
+					var dy = smp.data[Math.floor(ch.pos)]-prevdata;
+					var ix = ch.pos-Math.floor(ch.pos);
+					res = (prevdata+dy*ix)/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
+				} else res=smp.data[Math.floor(ch.pos)]/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
+				if (!ch.mute&&res!=undefined&&res!=NaN) {
+					if (a%4==0||a%4==3) {
+						outL+=res*stereomul;
+						outR+=res*(1-stereomul);
+					} else {
+						outR+=res*stereomul;
+						outL+=res*(1-stereomul);
+					}
+					outM += res;
+				}
+			}
+		} else {
+			ch.pos = 0;
+		//	ch.active = false;
+		}
+		scopeData[a][scopePos]=res;
+		a ++ ;
+	}
+	scopePos++;
+	if (scopePos>=bufferSize) scopePos=0;
+	return [outL, outR, outM/2];
+}
+
+function modmain(ac) {
+	
+	pvupdated = false;
+	t0 = 2.5/tempo;
+	var bufferlen = ac.outputBuffer.length;
+	var bufferL = ac.outputBuffer.getChannelData(0);
+	var bufferR = ac.outputBuffer.getChannelData(1);
+	
+	//Clearup
+	for (i = 0; i < bufferlen; i ++) {
+		bufferR[i] = bufferL[i] = 0;
+	}
+	
+	//Mixing
+	if (playing) {
+		for (i = 0; i < bufferlen; i ++) {
+			//Timing
+			timer_0 += 1/smprate;
+			
+			var output = mixChannels();
+			
+			if (stereo) {
+				bufferL[i] = output[0]
+				bufferR[i] = output[1];
+			} else bufferL[i]=bufferR[i]=output[2];
+			
+			if (timer_0 >= t0) nextTick();
+
+		}
+	}
+}
+
+function nextTick() {
+	while (timer_0 >= t0) timer_0 -= t0;
+	tick ++ ;
+	if (tick >= spd) {
+		tick = 0;
+		nextRow();
+		return;
+	}
+	a = 0;
+	while (a<numofchannels) {
+		var channel = channels[a];
+		var effect = channel.effect;
+		var para = channel.para;
+		if (channel.delay==-1) {
+			
+			if (effect==0&&para!=0) {
+				var arpeggio = [0, para>>4, para&0xF];
+			//	var finetune = 0;
+			//	if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
+			//	var fineperiod = (((59-(channel.note+arpeggio[(tick+1)%3]))/16)*finetune);
+				channel.arpeggioperiod = periodTable[channel.periodOfs+arpeggio[(tick+1)%3]];
+				if (amigaFreqLimits) channel.arpeggioperiod = Math.max(108, Math.min(907, channel.arpeggioperiod));
+			//	channel.arpeggioperiod = periodTableFT2[channel.note+arpeggio[(tick+1)%3]]-fineperiod;
+			} else {
+				channel.arpeggioperiod = 0;
+			}
+			if (effect==1) {
+				channel.period -= para;
+			} else if (effect==2) {
+				channel.period += para;
+			} else if (effect==3||effect==5) {
+				channel.slid = true;
+				if (channel.period>channel.targetperiod) channel.period-=channel.paraslide;
+				else if (channel.period<channel.targetperiod) channel.period+=channel.paraslide;
+				if (Math.abs(channel.period-channel.targetperiod)<channel.paraslide) {
+					channel.period = channel.targetperiod;
+					channel.slid = false;
+				}
+			}
+			if (effect==4||effect==6) {
+				channel.vibamp = channel.paravib&0xF;
+				channel.vibpos += (channel.paravib&0xF0)>>4;
+			} else channel.vibpos=0;
+			if (effect==5||effect==6||effect==10) {
+				if (para<16) channel.volume=Math.max(0, channel.volume-para);
+				else channel.volume=Math.min(64, channel.volume+(para>>4));
+			}
+			if (effect==7) {
+				channel.treamp = channel.paratre&0xF;
+				channel.trepos += (channel.paratre&0xF0)>>4;
+			} else channel.trepos=0;
+			if (effect==12) channel.volume=para;
+			if (effect==14) {
+				var effect2 = para>>4;
+				var para2 = para&0xF;
+				if (tick==1) {
+					if (effect2==1) channel.period-=para2;
+					if (effect2==2) channel.period+=para2;
+					if (effect2==10) channel.volume=Math.min(64, channel.volume+para2);
+					if (effect2==11) channel.volume=Math.max(0, channel.volume-para2);
+				}
+				if (effect2==12&&tick==para2) channel.volume=0;
+			}
+			if (amigaFreqLimits) channel.period = Math.max(108, Math.min(907, channel.period));
+		} else {
+			channel.delay--;
+			if (channel.delay<=1) {
+				var note = patterndata[patternorder[curpos]][currow][a];
+				effect = channel.delayeffect;
+				para = channel.delaypara;
+				channel.delay = -1;
+				if (channel.delaysample!=0) {
+					channel.ofs = 0;
+					channel.volume=samples[channel.delaysample-1].vol;
+					if (channel.delaysample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=0;
+					if (effect!=3) channel.sampleold=channel.delaysample-1;
+					if (effect!=3&&effect!=5&&effect!=9&&!channel.slid) channel.sample=channel.sampleold;
+				}
+				if (channel.delayperiod!=0) {
+					var finetune = 0;
+					if (effect!=3&&effect!=5) channel.sample = channel.sampleold;
+					if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
+				//	var fineperiod = (((59-channel.note)/16)*finetune);
+					channel.periodOfs = channel.delaynote+finetune*finetunemul;
+					channel.targetperiod=periodTable[channel.periodOfs];
+				//	channel.targetperiod=Math.ceil(periodTableFT2[channel.note]-fineperiod);
+				//	channel.targetperiod=((PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(1-(finetune/16-Math.floor(finetune/16)))+PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(finetune/16-Math.floor(finetune/16)))*16/2^Math.floor(channel.note/12));
+					if (effect!=9&&effect!=3&&effect!=5) channel.pos=channel.ofs;
+					if (effect!=3&&effect!=5) {
+						channel.slid = false;
+						if (effect==0&&para!=0) channel.arpeggioperiod=channel.period=channel.targetperiod;
+						else {
+							channel.period = channel.targetperiod;
+							channel.arpeggioperiod = 0;
+						}
+					}
+				}
+			}
+		}
+		a++;
+	}
+}
+
+function nextRow() {
+	a = 0;
+	if (patdelay==0) {
+		if (!pvupdated) pvdelay = 0;
+		currow ++ ;
+		if (patbrk>=0) {
+			currow = patbrk;
+			patbrk=repto=-1;
+			patrep=reppos=0;
+			curpos++;
+		} else if (patjmp>=0) {
+			curpos = patjmp;
+			currow=patrep=reppos=0;
+			repto=patjmp=-1;
+		} else if (repto>=0) {
+			currow = repto;
+			repto = -1;
+		} else if (currow>=64) {
+			currow=patrep=reppos=0;
+			repto = -1;
+			curpos++;
+		}
+		if (curpos>=songleng) curpos=rstpos;
+		if (logrow) {
+			console.log("Pos "+curpos+" Row "+currow+": ");
+			console.log(patterndata[patternorder[curpos]][currow]);
+		}
+		while (a<numofchannels) {
+			var channel = channels[a];
+			var note = patterndata[patternorder[curpos]][currow][a];
+			var effect = (note.effect&0xF00)>>8;
+			var para = note.effect&0xFF;
+			
+			var i = 0;
+			while (i<finetunemul) {
+		//	while (i<periodTableFT2.length) {
+				if (note.period==periodTable[i]) {
+			//	if (note.period==periodTableFT2[i]) {
+					channel.note = i;
+					break;
+				}
+				i++;
+			}
+			
+			channel.effect = effect;
+			channel.para = para;
+			
+		/*	if (note.sample!=0) {
+				if (effect!=3&&channel.sample!=note.sample-1&&note.period!=0) channel.active = false;
+				channel.volume=samples[note.sample-1].vol;
+				channel.sample = channel.sampleold = note.sample-1;
+			}
+			if (note.period!=0) {
+				channel.targetperiod=note.period;
+				if (channel.active) channel.notechg=true;
+				if (effect!=3) channel.active = false;
+				channel.sample = channel.sampleold;
+			}*/
+			if (effect!=14||(effect==14&&((para&0xF0)>>4)!=13)) {
+			//	channel.delay = -1;
+				if (note.sample!=0) {
+					channel.ofs = 0;
+					channel.volume=samples[note.sample-1].vol;
+					if (note.sample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=0;
+					if (effect!=3&&effect!=5) channel.sampleold=note.sample-1;
+					if (effect!=3&&effect!=5&&effect!=9&&!channel.slid) channel.sample=channel.sampleold;
+				}
+				if (note.period!=0) {
+					var finetune = 0;
+					if (effect!=3&&effect!=5) channel.sample=channel.sampleold;
+					if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
+				//	var fineperiod = (((59-channel.note)/16)*finetune);
+					channel.periodOfs = channel.note+finetune*finetunemul;
+					channel.targetperiod=periodTable[channel.periodOfs];
+				//	channel.targetperiod=Math.ceil(periodTableFT2[channel.note]-fineperiod);
+				//	channel.targetperiod=((PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(1-(finetune/16-Math.floor(finetune/16)))+PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(finetune/16-Math.floor(finetune/16)))*16/2^Math.floor(channel.note/12));
+					if (effect!=9&&effect!=3&&effect!=5) channel.pos=channel.ofs;
+					if (effect!=3&&effect!=5) {
+						channel.slid = false;
+						if (effect==0&&para!=0) channel.arpeggioperiod=channel.period=channel.targetperiod;
+						else {
+							channel.period = channel.targetperiod;
+							channel.arpeggioperiod = 0;
+						}
+					}
+				}
+				if ((note.sample!=0||note.period!=0)&&effect==9) {
+					channel.ofs=para*256;
+					if (channel.ofs!=0) channel.ofsold=channel.ofs;
+					if (note.period!=0) channel.pos=channel.ofsold;
+				}
+			} else {
+				channel.delay = para&0xF;
+				channel.delaynote = channel.note;
+				channel.delaysample = note.sample;
+				channel.delayperiod = note.period;
+				channel.delayeffect = effect;
+				channel.delaypara = para;
+			}
+			if (para==0) channel.arpeggioperiod=0;
+			if (effect==3&&para!=0) channel.paraslide=para;
+			if (effect==4) {
+				if ((para&0xF)>0) channel.paravib=(channel.paravib&0xF0)+(para&0xF);
+				if (((para&0xF0)>>4)>0) channel.paravib=(channel.paravib&0xF)+(para&0xF0);
+			}
+			if (effect==7) {
+				if ((para&0xF)>0) channel.paratre=(channel.paratre&0xF0)+(para&0xF);
+				if (((para&0xF0)>>4)>0) channel.paratre=(channel.paratre&0xF)+(para&0xF0);
+			}
+			if (effect==11) patjmp=para;
+			if (effect==12) channel.volume=para;
+			if (effect==13) patbrk=(para>>4)*10+para%0xF;
+			if (effect==14&&((para&0xF0)>>4)==6) {
+				if ((para&0xF)==0&&reppos<currow) {
+					reppos = currow;
+					patrep = 0;
+				} else if (patrep<(para&0xF)) {
+					patrep++;
+					repto = reppos;
+				}
+			}
+			if (effect==14&&((para&0xF0)>>4)==9) channel.delay=para&0xF;
+			if (effect==14&&((para&0xF0)>>4)==14) pvdelay=patdelay=para&0x0F;
+			if (effect==15) {
+				if (para<32) spd=para;
+				else tempo=para;
+			}
+			a++;
+		}
+	} else {
+		patdelay--;
+	}
+	if (!pvupdated) pvrow=currow;
+	pvupdated = true;
+}
+
+function initialize_player() {
+	gainNode.connect(audioCtx.destination);
+	scriptNode.connect(gainNode);
+	scriptNode.onaudioprocess = modmain;
+	
+	volume = 1.0;
+	
+	tempo = 125;
+	spd = 6;
+	oldpos = 128;
+
+	currow = -1;
+	curpos = 0;
+	patbrk = -1;
+	patjmp = -1;
+	patdelay = 0;
+	patrep = 0;
+	reppos = 0;
+	repto = -1;
+	tick = 0;
+	
+	timer_0 = timer_1 = 0;
+	
+	a = 0;
+	channels = [];
+	while (a<numofchannels) {
+		channels.push({
+			'note':		0,
+			'period':	428,
+			'targetperiod':	428,
+			'slid':		false,
+			'periodOfs':	0,
+			'arpeggio':	0,
+			'sample':	31,
+			'sampleold':	31,
+			'pos':		0,
+			'ofs':		0,
+			'ofsold':	0,
+			'volume':	0,
+			'effect':	0,
+			'para':		0,
+			'vibpos':	0,
+			'vibamp':	0,
+			'trepos':	0,
+			'treamp':	0,
+			'paraslide':	0,
+			'paravib':	0,
+			'paratre':	0,
+			'delay':	-1,
+			'cutdelay':	0,
+			'delaynote':	0,
+			'delaysample':	0,
+			'delayperiod':	0,
+			'delayeffect':	0,
+			'delaypara':	0,
+			'mute': false
+		});
+		a ++ ;
+	}
+	
+	init = 1;
+	playing = 1;
+}
+
+function unmuteAll() {
+	var i = 0;
+	while (i<numofchannels) {
+		channels[i].mute = false;
+		i++;
+	}
+}
+
+function solo(ch) {
+	var i = 0;
+	while (i<numofchannels) {
+		channels[i].mute = (ch!=i);
+		i++;
+	}
+}
+
+function mute(ch) {
+	channels[ch].mute = !channels[ch].mute;
+}
+	
+function drawScreen() {
+	var modview = document.getElementById("pattern");
+	var scope = document.getElementById("scope");
+	var context = scope.getContext("2d");
+	var scrwidth = 164+numofchannels*100;
+	if (scrwidth<564) scrwidth=564;
+	modview.width=scope.width=scrwidth;
+	context.fillStyle = "#000000";
+    context.fillRect(0, 0, scope.width, scope.height);
+	context.textBaseline = "middle";
+	var i = 0;
+	var j;
+	while (i<numofchannels) {
+		j = 0;
+		context.strokeStyle = '#ccccff';
+		if (init) {
+			if (channels[i].mute) context.strokeStyle = '#cc0000';
+		}
+        context.beginPath();
+		if (init) {
+			var k = scopePos;
+			while (j<bufferSize) {
+				context.lineTo(100*i+j*(100/bufferSize), (scopeData[i][k]/0.03125)*39.5+40);
+				k++;
+				if (k>=bufferSize) k=0;
+				j++;
+			}
+			context.stroke();
+		}
+		
+		context.font = "16px bold Arial";
+		context.fillStyle = "#ffffff";
+		context.textAlign = "left";
+		context.fillText((i+1), i*100, 8);
+		
+		i++;
+	}
+	if (init) {
+		context.font = "12px Arial";
+		context.textAlign = "right";
+		context.fillText("Tempo: "+tempo, scope.width, 6);
+		context.fillText("Ticks/Row: "+spd, scope.width, 18);
+		context.fillText("Pos: "+hexTextA[curpos>>4]+hexTextA[curpos&0xF]+"/"+(hexTextA[(songleng-1)>>4]+hexTextA[(songleng-1)&0xF]), scope.width, 30);
+		context.fillText("Row: "+hexTextA[currow>>4]+hexTextA[currow&0xF], scope.width, 42);
+		context.fillText("Pattern: "+patternorder[curpos], scope.width, 54);
+	}
+	context = pattern_canvas.getContext("2d");
+	context.textBaseline = "middle";
+	if (init&&curpos!=oldpos) {
+		pattern_canvas.width = 0;
+		pattern_canvas.height = 0;
+		pattern_canvas.width = 30+numofchannels*100;
+		pattern_canvas.height = 780;
+		context.font = "12px Arial";
+		context.fillStyle = "#000000";
+	//	var i = currow-12;
+	//	if (i<0) i=0;
+	//	var l = i+24;
+		i = 0;
+	//	while (i<l) {
+	//		if (i>=64) break;
+		while (i<64) {
+			j = 0;
+			context.fillStyle = "#ffffff";
+			context.textAlign = "left";
+			context.fillText(hexTextB[i>>4]+hexTextB[i&0xF], 0, 24+i*12);
+			while (j<numofchannels) {
+				var note = patterndata[patternorder[curpos]][i][j];
+				var notenum = 0;
+				var k = 0;
+				var txt = "";
+				if (note.period!=0) {
+					while (k<61) {
+				//	while (k<periodTableFT2.length) {
+						if (note.period==periodTableExt[k]) {
+					//	if (note.period==periodTableFT2[k]) {
+							notenum = k;
+							break;
+						}
+						k++;
+					}
+					txt = noteText[notenum%12]+(Math.floor(notenum/12)+2);
+				} else txt="－－－";
+				context.fillStyle = "#ffffff";
+				context.textAlign = "left";
+				context.fillText(txt, 30+j*100, 24+i*12);
+				var da,db,dc;
+				if (note.sample!=0) {
+					da = note.sample&0xF;
+					db = note.sample>>4;
+					txt = hexTextB[db]+hexTextB[da];
+				} else txt="－－";
+				context.fillStyle = "#ccccff";
+				context.textAlign = "left";
+				context.fillText(txt,66+j*100, 24+i*12);
+				if (note.effect!=0) {
+					da = note.effect&0xF;
+					db = (note.effect&0xF0)>>4;
+					dc = (note.effect&0xF00)>>8;
+					context.fillStyle = "#dddddd";
+					//Too lazy to use switch (dc)
+					if (dc==0) context.fillStyle = "#dddddd";
+					else if (dc<=4) context.fillStyle = "#cc8822";
+					else if (dc<=6) context.fillStyle = "#ccccff";
+					else if (dc==7) context.fillStyle = "#cc8822";
+					else if (dc<=9) context.fillStyle = "#888888";
+					else if (dc<=10) context.fillStyle = "#00cc00";
+					else if (dc==11) context.fillStyle = "#cc0000";
+					else if (dc==12) context.fillStyle = "#00cc00";
+					else if (dc==13) context.fillStyle = "#cc0000";
+					else if (dc==14) context.fillStyle = "#999999";
+					else if (dc==15) context.fillStyle = "#cc0000";
+					txt = hexTextB[dc]+hexTextB[db]+hexTextB[da];
+				} else {
+					context.fillStyle = "#ccccff";
+					txt="－－－";
+				}
+				context.textAlign = "left";
+				context.fillText(txt, 90+j*100, 24+i*12);
+				j++;
+			}
+			i++;
+		}
+	}
+	context = modview.getContext("2d");
+	context.fillStyle = "#000000";
+    context.fillRect(0, 0, modview.width, modview.height);
+	
+	var patscroll = -6+(pvrow+1)*-12;
+	if (smoothScrolling&&pvdelay==0) patscroll-=(tick/spd*12);
+//	if (smoothScrolling&&(!patbrk>=0&&!patjmp>=0&&pvdelay==0&&pvrow>0)) patscroll=-8+(pvrow+2)*-16-(tick/spd*16);
+	if (smoothScrolling&&pvdelay!=0) patscroll-=(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay+1))*12;
+	/*	if (pvdelay==patdelay) patscroll+=16-(tick/spd*16);
+	//	else
+	//	patscroll+=16-(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay))*16;
+	}*/
+	context.fillStyle = "#444444";
+	if (init) {
+		if (smoothScrolling) context.fillRect(0, Math.round(modview.height/2+patscroll+(pvrow+1)*12), modview.width, 12);
+		else context.fillRect(0, modview.height/2-6, modview.width, 12);
+	}
+	context.drawImage(pattern_canvas, Math.round(modview.width/2-pattern_canvas.width/2), Math.round(patscroll+modview.height/2));
+	
+	oldpos = curpos;
+	if (playing) {
+		window.requestAnimationFrame(drawScreen);
+	}
+}
+
+window.onload = function () {
+	var play_btn = document.getElementById("playbtn");
+	var load_btn = document.getElementById("loadbtn");
+	var stereo_btn = document.getElementById("stereobtn");
+	var interpolation_btn = document.getElementById("interpolationbtn");
+	var smoothscroll_btn = document.getElementById("smoothscrollbtn");
+	songname_canvas = document.getElementById("songname");
+	samples_canvas = document.getElementById("samples");
+	drawScreen();
+	initInfoView();
+	interpolation_btn.onclick = function () {
+		interpolation = !interpolation;
+		if (!interpolation) {
+			interpolation_btn.innerHTML = "Interpolation Off";
+		} else {
+			interpolation_btn.innerHTML = "Interpolation On";
+		}
+	}
+	smoothscroll_btn.onclick = function () {
+		smoothScrolling = !smoothScrolling;
+		if (!smoothScrolling) {
+			smoothscroll_btn.innerHTML = "Smooth Scrolling Off";
+		} else {
+			smoothscroll_btn.innerHTML = "Smooth Scrolling On";
+		}
+	}
+	play_btn.onclick = function () {
+		if (loaded) {
+			if (!init) initialize_player(); else {
+				playing = !playing;
+			}
+			if (!playing) {
+				scriptNode.disconnect(audioCtx.destination);
+				play_btn.innerHTML = "Play";
+			} else {
+				scriptNode.connect(audioCtx.destination);
+				play_btn.innerHTML = "Pause";
+				window.requestAnimationFrame(drawScreen);
+			}
+		}
+	}
+	load_btn.onclick = function () {
+		var selectedFile = document.getElementById('xmfile').files[0];
+		var reader = new FileReader();
+		play_btn.innerHTML = "Play";
+		reader.readAsArrayBuffer(selectedFile);
+		reader.onload = function(e) {
+			//load(e.target.result);
+			filebuffer = e.target.result;
+			console.log(filebuffer);
+			if (playing) {
+				scriptNode.disconnect(audioCtx.destination);
+			}
+			playing = 0;
+			loaded = 0;
+			init = 0;
+			load_module();
+			drawScreen();
+		}
+	}
+	stereo_btn.onclick = function () {
+		stereo = !stereo;
+		if (!stereo) {
+			stereo_btn.innerHTML = "Mono";
+		} else {
+			stereo_btn.innerHTML = "Stereo";
+		}
+	}
+}

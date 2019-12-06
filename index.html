@@ -1,0 +1,39 @@
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8">
+		<title>Amiga module player</title>
+		<script type="text/javascript" charset="UTF-8" src="main.js"></script>
+		<style>
+			.centered {
+				display: block;
+				margin-left: auto;
+				margin-right: auto;
+			}
+		</style>
+	</head>
+	<body>
+		<div style="text-align: center">
+			<p>
+				Amiga module player
+			</p>
+			<p>
+				<input type="file" id="xmfile">
+			</p>
+			<p>
+				<button id="loadbtn" style="width: 100px; background: #ccc">Load</button>
+				<button id="playbtn" style="width: 100px; background: #ccc;">Play</button>
+			</p>
+			<p>
+				<button id="interpolationbtn" style="width: 150px; background: #ccc">Interpolation On</button>
+				<button id="smoothscrollbtn" style="width: 150px; background: #ccc;">Smooth Scrolling Off</button>
+				<button id="stereobtn" style="width: 100px; background: #ccc;">Mono</button>
+			</p>
+			<div><canvas class="centered" id='songname' width="564" height="40"></canvas></div>
+			<div><canvas class="centered" id='scope' width="564" height="80"></canvas></div>
+			<div><canvas class="centered" id='pattern' width="1920" height="384"></canvas></div>
+			<div><canvas class="centered" id='samples' width="564" height="192"></canvas></div>
+			<p>Glacc</p>
+			<a href="http://github.com/glacc/amp">github.com/glacc/amp</a>
+		</div>
+	</body>
+</html>
