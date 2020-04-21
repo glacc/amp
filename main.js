@@ -11,10 +11,13 @@
 
 var bufferSize = 1024;
 
-var stereomul = .75;
+var stereomulAmiga = .5;
+var stereomulnonAmiga = .75;
+var stereomul = .5;
+var volRampSpd = 10;
 var stereo = false;
 
-var amigaFreq = 7093789.2;//7158728;
+var amigaFreq = 7093790;//7093789.2;//7158728;
 var interpolation = true;
 var amigaFreqLimits = true;
 var smoothScrolling = false;
@@ -22,7 +25,7 @@ var smoothScrolling = false;
 var AudioContext = window.AudioContext || window.webkitAudioContext;
 var audioCtx = new AudioContext();
 var gainNode = audioCtx.createGain();
-gainNode.gain.value = 15;
+gainNode.gain.value = 5;
 gainNode.connect(audioCtx.destination);
 var scriptNode = audioCtx.createScriptProcessor(bufferSize, 0, 2);
 var smprate = audioCtx.sampleRate;
@@ -78,6 +81,7 @@ var timer_0 = 0;
 var t0 = 0;
 
 var logrow = false;
+var logbuf = false;
 
 //var periodTableFT2 = [1712,1616,1525,1440,1357,1281,1209,1141,1077,1017, 961, 907, 856, 808, 762, 720, 678, 640, 604, 570, 538, 508, 480, 453, 428, 404, 381, 360, 339, 320, 302, 285, 269, 254, 240, 226, 214, 202, 190, 180, 170, 160, 151, 143, 135, 127, 120, 113, 107, 101, 95, 90, 85, 80, 76, 71, 67, 64, 60, 57];
 
@@ -88,7 +92,11 @@ var pvrow = -1;
 var pvdelay = 0;
 var pvupdated = false;
 
-var finetunemul = 37;
+var ftmul_amiga = 37;
+var ftmul_ext = 85;
+var finetunemul = ftmul_amiga;
+
+var numofsamples = 31;
 
 var formatTag = [
 	"1CHN", "2CHN", "3CHN", "4CHN", "5CHN", "6CHN", "7CHN", "8CHN",
@@ -148,107 +156,27 @@ var periodTableMod = [
     216,203,192,181,171,161,152,144,136,128,121,114,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	];
-
-
-var periodTableExt = [
-	1712*2,1616*2,1524*2,1440*2,1356*2,1280*2,1208*2,1140*2,1076*2,1016*2,960*2,907*2,
+	
+//From OpenMPT source.
+var ProTrackerTunedPeriods =
+[
 	1712,1616,1524,1440,1356,1280,1208,1140,1076,1016,960,907,
-    856,808,762,720,678,640,604,570,538,508,480,453,
-    428,404,381,360,339,320,302,285,269,254,240,226,
-    214,202,190,180,170,160,151,143,135,127,120,113,
-	107,101, 95, 90, 85, 80, 76, 71, 67, 64, 60, 57,0,
-	1700*2,1604*2,1514*2,1430*2,1348*2,1274*2,1202*2,1134*2,1070*2,1010*2,954*2,900*2,
 	1700,1604,1514,1430,1348,1274,1202,1134,1070,1010,954,900,
-    850,802,757,715,674,637,601,567,535,505,477,450,
-    425,401,379,357,337,318,300,284,268,253,239,225,
-    213,201,189,179,169,159,150,142,134,126,119,113,
-	107,101, 95, 90, 85, 80, 75, 71, 67, 63, 60, 57,0,
-	1688*2,1592*2,1504*2,1418*2,1340*2,1264*2,1194*2,1126*2,1064*2,1004*2,948*2,894*2,
 	1688,1592,1504,1418,1340,1264,1194,1126,1064,1004,948,894,
-    844,796,752,709,670,632,597,563,532,502,474,447,
-    422,398,376,355,335,316,298,282,266,251,237,224,
-    211,199,188,177,167,158,149,141,133,125,118,112,
-	106,100, 94, 89, 84, 79, 75, 71, 67, 63, 59, 56,0,
-	1676*2,1582*2,1492*2,1408*2,1330*2,1256*2,1184*2,1118*2,1056*2,996*2,940*2,888*2,
 	1676,1582,1492,1408,1330,1256,1184,1118,1056,996,940,888,
-    838,791,746,704,665,628,592,559,528,498,470,444,
-    419,395,373,352,332,314,296,280,264,249,235,222,
-    209,198,187,176,166,157,148,140,132,125,118,111,
-	105, 99, 94, 88, 83, 79, 74, 70, 66, 63, 59, 56,0,
-	1664*2,1570*2,1482*2,1398*2,1320*2,1246*2,1176*2,1110*2,1048*2,990*2,934*2,882*2,
 	1664,1570,1482,1398,1320,1246,1176,1110,1048,990,934,882,
-    832,785,741,699,660,623,588,555,524,495,467,441,
-    416,392,370,350,330,312,294,278,262,247,233,220,
-    208,196,185,175,165,156,147,139,131,124,117,110,
-	104, 98, 93, 88, 83, 78, 74, 70, 66, 62, 59, 55,0,
-	1652*2,1558*2,1472*2,1388*2,1310*2,1238*2,1168*2,1102*2,1040*2,982*2,926*2,874*2,
 	1652,1558,1472,1388,1310,1238,1168,1102,1040,982,926,874,
-    826,779,736,694,655,619,584,551,520,491,463,437,
-    413,390,368,347,328,309,292,276,260,245,232,219,
-    206,195,184,174,164,155,146,138,130,123,116,109,
-	103, 98, 92, 87, 82, 78, 73, 69, 65, 62, 58, 55,0,
-	1640*2,1548*2,1460*2,1378*2,1302*2,1228*2,1160*2,1094*2,1032*2,974*2,920*2,868*2,
 	1640,1548,1460,1378,1302,1228,1160,1094,1032,974,920,868,
-    820,774,730,689,651,614,580,547,516,487,460,434,
-    410,387,365,345,325,307,290,274,258,244,230,217,
-    205,193,183,172,163,154,145,137,129,122,115,109,
-	103, 97, 92, 86, 82, 77, 73, 69, 65, 61, 58, 55,0,
-	1628*2,1536*2,1450*2,1368*2,1292*2,1220*2,1150*2,1086*2,1026*2,968*2,914*2,862*2,
 	1628,1536,1450,1368,1292,1220,1150,1086,1026,968,914,862,
-    814,768,725,684,646,610,575,543,513,484,457,431,
-    407,384,363,342,323,305,288,272,256,242,228,216,
-    204,192,181,171,161,152,144,136,128,121,114,108,
-	102, 96, 91, 86, 81, 76, 72, 68, 64, 61, 57, 54,0,
-	1814*2,1712*2,1616*2,1524*2,1440*2,1356*2,1280*2,1208*2,1140*2,1076*2,1016*2,960*2,
 	1814,1712,1616,1524,1440,1356,1280,1208,1140,1076,1016,960,
-    907,856,808,762,720,678,640,604,570,538,508,480,
-    453,428,404,381,360,339,320,302,285,269,254,240,
-    226,214,202,190,180,170,160,151,143,135,127,120,
-	113,107,101, 95, 90, 85, 80, 76, 72, 68, 64, 60,0,
-	1800*2,1700*2,1604*2,1514*2,1430*2,1350*2,1272*2,1202*2,1134*2,1070*2,1010*2,954*2,
 	1800,1700,1604,1514,1430,1350,1272,1202,1134,1070,1010,954,
-    900,850,802,757,715,675,636,601,567,535,505,477,
-    450,425,401,379,357,337,318,300,284,268,253,238,
-    225,212,200,189,179,169,159,150,142,134,126,119,
-	113,106,100, 95, 90, 85, 80, 75, 71, 67, 63, 60,0,
-	1788*2,1688*2,1592*2,1504*2,1418*2,1340*2,1264*2,1194*2,1126*2,1064*2,1004*2,948*2,
 	1788,1688,1592,1504,1418,1340,1264,1194,1126,1064,1004,948,
-    894,844,796,752,709,670,632,597,563,532,502,474,
-    447,422,398,376,355,335,316,298,282,266,251,237,
-    223,211,199,188,177,167,158,149,141,133,125,118,
-	112,106,100, 94, 89, 84, 79, 75, 71, 67, 63, 59,0,
-	1774*2,1676*2,1582*2,1492*2,1408*2,1330*2,1256*2,1184*2,1118*2,1056*2,996*2,940*2,
 	1774,1676,1582,1492,1408,1330,1256,1184,1118,1056,996,940,
-    887,838,791,746,704,665,628,592,559,528,498,470,
-    444,419,395,373,352,332,314,296,280,264,249,235,
-    222,209,198,187,176,166,157,148,140,132,125,118,
-	111,105, 99, 94, 88, 83, 79, 74, 70, 66, 63, 59,0,
-	1762*2,1664*2,1570*2,1482*2,1398*2,1320*2,1246*2,1176*2,1110*2,1048*2,988*2,934*2,
 	1762,1664,1570,1482,1398,1320,1246,1176,1110,1048,988,934,
-    881,832,785,741,699,660,623,588,555,524,494,467,
-    441,416,392,370,350,330,312,294,278,262,247,233,
-    220,208,196,185,175,165,156,147,139,131,123,117,
-	110,104, 98, 93, 88, 83, 78, 74, 70, 66, 62, 59,0,
-	1750*2,1652*2,1558*2,1472*2,1388*2,1310*2,1238*2,1168*2,1102*2,1040*2,982*2,926*2,
 	1750,1652,1558,1472,1388,1310,1238,1168,1102,1040,982,926,
-    875,826,779,736,694,655,619,584,551,520,491,463,
-    437,413,390,368,347,328,309,292,276,260,245,232,
-    219,206,195,184,174,164,155,146,138,130,123,116,
-	110,103, 98, 92, 87, 82, 78, 73, 69, 65, 62, 58,0,
-	1736*2,1640*2,1548*2,1460*2,1378*2,1302*2,1228*2,1160*2,1094*2,1032*2,974*2,920*2,
 	1736,1640,1548,1460,1378,1302,1228,1160,1094,1032,974,920,
-    868,820,774,730,689,651,614,580,547,516,487,460,
-    434,410,387,365,345,325,307,290,274,258,244,230,
-    217,205,193,183,172,163,154,145,137,129,122,115,
-	109,103, 97, 92, 86, 82, 77, 73, 69, 65, 61, 58,0,
-	1724*2,1628*2,1536*2,1450*2,1368*2,1292*2,1220*2,1150*2,1086*2,1026*2,968*2,914*2,
-	1724,1628,1536,1450,1368,1292,1220,1150,1086,1026,968,914,
-    862,814,768,725,684,646,610,575,543,513,484,457,
-    431,407,384,363,342,323,305,288,272,256,242,228,
-    216,203,192,181,171,161,152,144,136,128,121,114,
-	108,102, 96, 91, 86, 81, 76, 72, 68, 64, 61, 57,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0
-	];
+	1724,1628,1536,1450,1368,1292,1220,1150,1086,1026,968,914
+];
 	
 var periodTable = periodTableMod;
 //from XM.TXT
@@ -300,7 +228,7 @@ function load_module() {
 	document.title = "Amiga mod player - "+songname;
 	
 	var i = 0;
-	while (i<31) {
+	while (i<numofsamples) {
 		offset = 20+i*30;
 	/*	var finetune = cursor.getUint8(offset+24)&0xF;
 		if (finetune>=8) finetune=14-finetune;
@@ -330,34 +258,35 @@ function load_module() {
 	}
 	
 	//Song info
-	songleng = cursor.getUint8(950);
-	
+	offset += 30;
+	songleng = cursor.getUint8(offset);
 	//Pattern order
+	offset += 2 ;
 	numofpatterns = 0;
-	offset = 952;
-	while (offset<1080) {
+	while (offset<150+30*numofsamples) {
 		var patternno = cursor.getUint8(offset);
 		if (patternno > numofpatterns) numofpatterns = patternno;
-		patternorder[offset-952] = patternno;
+		patternorder[offset-(30*numofsamples+22)] = patternno;
 		offset++;
 	}
 	console.log("Number of patterns: "+numofpatterns);
 	console.log("Pattern order:");
 	console.log(patternorder);
-	var tag = getstring(cursor, 1080, 4);
+	var tag = getstring(cursor, 150+30*numofsamples, 4);
 	console.log(tag);
 	
 	i = 0;
-	numofchannels=4;
+	numofchannels = 4;
+	stereomul = stereomulAmiga;
 	amigaFreqLimits = true;
 	periodTable = periodTableMod;
-	finetunemul = 37;
+	finetunemul = ftmul_amiga;
 	while (i<32) {
 		if (formatTag[i]==tag) {
 			numofchannels = i+1;
 			amigaFreqLimits = false;
-			periodTable = periodTableExt;
-			finetunemul = 73;
+			finetunemul = ftmul_ext;
+			stereomul = stereomulnonAmiga;
 			break;
 		}
 		i++;
@@ -365,8 +294,8 @@ function load_module() {
 	if (tag=="CD81") {
 		numofchannels = 8;
 		amigaFreqLimits = false;
-		periodTable = periodTableExt;
-		finetunemul = 73;
+		finetunemul = ftmul_ext;
+		stereomul = stereomulnonAmiga;
 	}
 	
 	var scrwidth = 164+numofchannels*100;
@@ -382,7 +311,7 @@ function load_module() {
 	
 	//Pattern data
 	patterndata = [];
-	offset = 1084;
+	offset += (numofsamples == 31 ? 4 : 0);
 	i = 0;
 	var j, k;
 	//Pattern
@@ -406,8 +335,8 @@ function load_module() {
 				currentnote.period = upper16&0x0FFF;
 				if ((currentnote.period>856||currentnote.period<113)&&currentnote.period!=0&&amigaFreqLimits) {
 					amigaFreqLimits = false;
-					periodTable = periodTableExt;
-					finetunemul = 73;
+					finetunemul = ftmul_ext;
+					stereomul = stereomulnonAmiga;
 				}
 				currentnote.effect = lower16&0x0FFF;
 				currentrow.push(currentnote);
@@ -430,7 +359,7 @@ function load_module() {
 	
 	i = 0;
 	context.strokeStyle = "#555599";
-	while (i<31) {
+	while (i<numofsamples) {
 		j = 0;
 		context.beginPath();
 		while (j<samples[i].leng) {
@@ -489,7 +418,7 @@ function mixChannels() {
 	while (a<numofchannels) {
 		var res = 0;
 		var ch = channels[a];
-		if (ch.sample != 31 && ch.period != 0) {
+		if (ch.sample != 32 && ch.period != 0) {
 			var smp = samples[ch.sample];
 /*			if (!ch.active) {
 				ch.active = true;
@@ -505,30 +434,49 @@ function mixChannels() {
 			if (ch.arpeggioperiod!=0) ch.pos += amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)/64-fineperiod)/2/smprate;
 			else ch.pos += amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)/64-fineperiod)/2/smprate;
 		*/
-			if (ch.arpeggioperiod!=0) ch.pos += amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
-			else ch.pos += amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+		
+			ch.volfinal -= (ch.volfinal - ch.voltarget)/volRampSpd;
+		
+			//if (ch.arpeggioperiod!=0) ch.pos += amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+			//else ch.pos += amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+			ch.pos += ch.delta;
 			
 			if (smp.repeatleng>2) {
-				while (ch.pos>=smp.repeatpoint+smp.repeatleng) ch.pos-=smp.repeatleng;
+				if (ch.pos<smp.repeatpoint) ch.looping = false;
+				while (ch.pos>=smp.repeatpoint+smp.repeatleng) {
+					ch.pos -= smp.repeatleng;
+					ch.looping = true;
+				}
 			} else if (ch.pos>=smp.leng) {
-				ch.sample = 31;
+				ch.sample = 32;
 			}
 			
 			if (ch.pos<=smp.leng) {
 				if (interpolation) {
 					var prevdata = smp.data[Math.floor(ch.pos)-1];
 					if (Math.floor(ch.pos)-1<0) prevdata=0;
+					if ((Math.floor(ch.pos)<=smp.repeatpoint) && ch.looping) prevdata = smp.data[smp.repeatpoint + smp.repeatleng - 1];
 					var dy = smp.data[Math.floor(ch.pos)]-prevdata;
 					var ix = ch.pos-Math.floor(ch.pos);
-					res = (prevdata+dy*ix)/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
-				} else res=smp.data[Math.floor(ch.pos)]/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
+					//res = (prevdata+dy*ix)/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
+					res = (prevdata+dy*ix)/4096*ch.volfinal;
+				} else res=smp.data[Math.floor(ch.pos)]/4096*ch.volfinal;
 				if (!ch.mute&&res!=undefined&&res!=NaN) {
-					if (a%4==0||a%4==3) {
-						outL+=res*stereomul;
-						outR+=res*(1-stereomul);
+					if (ch.pan!=-1) {
+						var panL = 1;
+						var panR = 1;
+						if (ch.pan<127) panR=ch.pan/127;
+						else panL=1-(ch.pan-127)/128;
+						outL += res*panL;
+						outR += res*panR;
 					} else {
-						outR+=res*stereomul;
-						outL+=res*(1-stereomul);
+						if (a%4==0||a%4==3) {
+							outL += res;
+							outR += res*(1-stereomul);
+						} else {
+							outR += res;
+							outL += res*(1-stereomul);
+						}
 					}
 					outM += res;
 				}
@@ -575,6 +523,24 @@ function modmain(ac) {
 
 		}
 	}
+	
+	if (logbuf) {
+		console.log(bufferL);
+		console.log(bufferR);
+		logbuf = false;
+	}
+}
+
+function updateChannelInfo()
+{
+	var a = 0;
+	while (a<numofchannels) {
+		var ch = channels[a];
+		if (ch.arpeggioperiod!=0) ch.delta = amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+		else ch.delta = amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
+		ch.voltarget = ((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
+		a ++ ;
+	}
 }
 
 function nextTick() {
@@ -583,6 +549,7 @@ function nextTick() {
 	if (tick >= spd) {
 		tick = 0;
 		nextRow();
+		updateChannelInfo();
 		return;
 	}
 	a = 0;
@@ -590,15 +557,22 @@ function nextTick() {
 		var channel = channels[a];
 		var effect = channel.effect;
 		var para = channel.para;
-		if (channel.delay==-1) {
+		if (channel.delay<=-1) {
 			
 			if (effect==0&&para!=0) {
-				var arpeggio = [0, para>>4, para&0xF];
+			//	var arpeggio = [0, para>>4, para&0xF];
 			//	var finetune = 0;
 			//	if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
 			//	var fineperiod = (((59-(channel.note+arpeggio[(tick+1)%3]))/16)*finetune);
-				channel.arpeggioperiod = periodTable[channel.periodOfs+arpeggio[(tick+1)%3]];
-				if (amigaFreqLimits) channel.arpeggioperiod = Math.max(108, Math.min(907, channel.arpeggioperiod));
+				if (amigaFreqLimits) {
+					var arpeggio = [0, para>>4, para&0xF];
+					channel.arpeggioperiod = Math.max(108, Math.min(907, periodTable[channel.periodOfs+arpeggio[tick%3]]));
+				} else {
+					var arpeggio = [0, para&0xF, para>>4];
+				//	var arpeggionote = (channel.note+arpeggio[(tick+1)%3]);
+					var arpeggionote = (channel.note+arpeggio[tick%3]);
+					channel.arpeggioperiod=(ProTrackerTunedPeriods[samples[channel.sample].finetune*12+arpeggionote%12]<<1)>>(Math.floor(arpeggionote/12)+(amigaFreqLimits ? 1 : 0));
+				}
 			//	channel.arpeggioperiod = periodTableFT2[channel.note+arpeggio[(tick+1)%3]]-fineperiod;
 			} else {
 				channel.arpeggioperiod = 0;
@@ -642,12 +616,11 @@ function nextTick() {
 			}
 			if (amigaFreqLimits) channel.period = Math.max(108, Math.min(907, channel.period));
 		} else {
-			channel.delay--;
-			if (channel.delay<=1) {
+			if (channel.delay > -1) channel.delay--;
+			if (channel.delay<1) {
 				var note = patterndata[patternorder[curpos]][currow][a];
 				effect = channel.delayeffect;
 				para = channel.delaypara;
-				channel.delay = -1;
 				if (channel.delaysample!=0) {
 					channel.ofs = 0;
 					channel.volume=samples[channel.delaysample-1].vol;
@@ -660,8 +633,10 @@ function nextTick() {
 					if (effect!=3&&effect!=5) channel.sample = channel.sampleold;
 					if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
 				//	var fineperiod = (((59-channel.note)/16)*finetune);
-					channel.periodOfs = channel.delaynote+finetune*finetunemul;
-					channel.targetperiod=periodTable[channel.periodOfs];
+					if (amigaFreqLimits) {
+						channel.periodOfs = channel.delaynote+finetune*finetunemul;
+						channel.targetperiod=periodTable[channel.periodOfs];
+					} else channel.targetperiod=(ProTrackerTunedPeriods[channel.delaynote%12+finetune*12]<<1)>>(Math.floor(channel.delaynote/12)+(amigaFreqLimits ? 1 : 0));
 				//	channel.targetperiod=Math.ceil(periodTableFT2[channel.note]-fineperiod);
 				//	channel.targetperiod=((PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(1-(finetune/16-Math.floor(finetune/16)))+PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(finetune/16-Math.floor(finetune/16)))*16/2^Math.floor(channel.note/12));
 					if (effect!=9&&effect!=3&&effect!=5) channel.pos=channel.ofs;
@@ -674,10 +649,17 @@ function nextTick() {
 						}
 					}
 				}
+				if ((channel.effect == 14) && (((channel.para&0xF0)>>4) == 9))
+                    channel.delay = channel.lastpara&0xF;
+                else
+                    channel.delay = -1;
 			}
 		}
+		
 		a++;
 	}
+	
+	updateChannelInfo();
 }
 
 function nextRow() {
@@ -716,7 +698,11 @@ function nextRow() {
 			var i = 0;
 			while (i<finetunemul) {
 		//	while (i<periodTableFT2.length) {
-				if (note.period==periodTable[i]) {
+				if (note.period>=periodTable[i] && amigaFreqLimits) {
+			//	if (note.period==periodTableFT2[i]) {
+					channel.note = i;
+					break;
+				} else if (note.period>=(ProTrackerTunedPeriods[i%12]<<1)>>(Math.floor(i/12)+(amigaFreqLimits ? 1 : 0)) && !amigaFreqLimits) {
 			//	if (note.period==periodTableFT2[i]) {
 					channel.note = i;
 					break;
@@ -724,8 +710,16 @@ function nextRow() {
 				i++;
 			}
 			
+			if (effect != 0 || para != 0) {
+                channel.lasteffect = effect;
+                channel.lastpara = para;
+			}
+			
 			channel.effect = effect;
 			channel.para = para;
+
+			if (!(channel.lasteffect == 14 && ((channel.lastpara&0xF0) >> 4) == 13))
+                channel.delay = -1;
 			
 		/*	if (note.sample!=0) {
 				if (effect!=3&&channel.sample!=note.sample-1&&note.period!=0) channel.active = false;
@@ -739,11 +733,10 @@ function nextRow() {
 				channel.sample = channel.sampleold;
 			}*/
 			if (effect!=14||(effect==14&&((para&0xF0)>>4)!=13)) {
-			//	channel.delay = -1;
 				if (note.sample!=0) {
 					channel.ofs = 0;
 					channel.volume=samples[note.sample-1].vol;
-					if (note.sample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=0;
+				//	if (note.sample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=0;
 					if (effect!=3&&effect!=5) channel.sampleold=note.sample-1;
 					if (effect!=3&&effect!=5&&effect!=9&&!channel.slid) channel.sample=channel.sampleold;
 				}
@@ -752,8 +745,10 @@ function nextRow() {
 					if (effect!=3&&effect!=5) channel.sample=channel.sampleold;
 					if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
 				//	var fineperiod = (((59-channel.note)/16)*finetune);
-					channel.periodOfs = channel.note+finetune*finetunemul;
-					channel.targetperiod=periodTable[channel.periodOfs];
+					if (amigaFreqLimits) {
+						channel.periodOfs = channel.note+finetune*finetunemul;
+						channel.targetperiod=periodTable[channel.periodOfs];
+					} else channel.targetperiod=(ProTrackerTunedPeriods[channel.note%12+finetune*12]<<1)>>(Math.floor(channel.note/12)+(amigaFreqLimits ? 1 : 0));
 				//	channel.targetperiod=Math.ceil(periodTableFT2[channel.note]-fineperiod);
 				//	channel.targetperiod=((PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(1-(finetune/16-Math.floor(finetune/16)))+PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(finetune/16-Math.floor(finetune/16)))*16/2^Math.floor(channel.note/12));
 					if (effect!=9&&effect!=3&&effect!=5) channel.pos=channel.ofs;
@@ -779,7 +774,7 @@ function nextRow() {
 				channel.delayeffect = effect;
 				channel.delaypara = para;
 			}
-			if (para==0) channel.arpeggioperiod=0;
+			if (effect!=0||para==0) channel.arpeggioperiod=0;
 			if (effect==3&&para!=0) channel.paraslide=para;
 			if (effect==4) {
 				if ((para&0xF)>0) channel.paravib=(channel.paravib&0xF0)+(para&0xF);
@@ -789,6 +784,7 @@ function nextRow() {
 				if ((para&0xF)>0) channel.paratre=(channel.paratre&0xF0)+(para&0xF);
 				if (((para&0xF0)>>4)>0) channel.paratre=(channel.paratre&0xF)+(para&0xF0);
 			}
+			if (effect==8&&!amigaFreqLimits) channel.pan=para<<1;
 			if (effect==11) patjmp=para;
 			if (effect==12) channel.volume=para;
 			if (effect==13) patbrk=(para>>4)*10+para%0xF;
@@ -801,12 +797,23 @@ function nextRow() {
 					repto = reppos;
 				}
 			}
-			if (effect==14&&((para&0xF0)>>4)==9) channel.delay=para&0xF;
+			if (effect==14&&((para&0xF0)>>4)==9) {
+				channel.delay = para&0xF;
+				channel.delaynote = channel.note;
+				channel.delaysample = note.sample;
+				channel.delayperiod = note.period;
+				channel.delayeffect = effect;
+				channel.delaypara = para;
+			}
 			if (effect==14&&((para&0xF0)>>4)==14) pvdelay=patdelay=para&0x0F;
 			if (effect==15) {
 				if (para<32) spd=para;
 				else tempo=para;
 			}
+			
+			if (channel.delay > -1)
+				channel.delay -- ;
+			
 			a++;
 		}
 	} else {
@@ -814,6 +821,52 @@ function nextRow() {
 	}
 	if (!pvupdated) pvrow=currow;
 	pvupdated = true;
+}
+
+function resetChannels() {
+	a = 0;
+	channels = [];
+	while (a<numofchannels) {
+		channels.push({
+			'note':		0,
+			'period':	428,
+			'targetperiod':	428,
+			'delta':	0,
+			'slid':		false,
+			'periodOfs':	0,
+			'arpeggio':	0,
+			'sample':	32,
+			'sampleold':	32,
+			'pos':		0,
+			'looping':	false,
+			'ofs':		0,
+			'ofsold':	0,
+			'volume':	0,
+			'voltarget':	0,
+			'volfinal':	0,
+			'effect':	0,
+			'lasteffect':	0,
+			'para':		0,
+			'lastpara':	0,
+			'pan':		-1,
+			'vibpos':	0,
+			'vibamp':	0,
+			'trepos':	0,
+			'treamp':	0,
+			'paraslide':	0,
+			'paravib':	0,
+			'paratre':	0,
+			'delay':	-1,
+			'cutdelay':	0,
+			'delaynote':	0,
+			'delaysample':	0,
+			'delayperiod':	0,
+			'delayeffect':	0,
+			'delaypara':	0,
+			'mute': false
+		});
+		a ++ ;
+	}
 }
 
 function initialize_player() {
@@ -839,42 +892,7 @@ function initialize_player() {
 	
 	timer_0 = timer_1 = 0;
 	
-	a = 0;
-	channels = [];
-	while (a<numofchannels) {
-		channels.push({
-			'note':		0,
-			'period':	428,
-			'targetperiod':	428,
-			'slid':		false,
-			'periodOfs':	0,
-			'arpeggio':	0,
-			'sample':	31,
-			'sampleold':	31,
-			'pos':		0,
-			'ofs':		0,
-			'ofsold':	0,
-			'volume':	0,
-			'effect':	0,
-			'para':		0,
-			'vibpos':	0,
-			'vibamp':	0,
-			'trepos':	0,
-			'treamp':	0,
-			'paraslide':	0,
-			'paravib':	0,
-			'paratre':	0,
-			'delay':	-1,
-			'cutdelay':	0,
-			'delaynote':	0,
-			'delaysample':	0,
-			'delayperiod':	0,
-			'delayeffect':	0,
-			'delaypara':	0,
-			'mute': false
-		});
-		a ++ ;
-	}
+	resetChannels();
 	
 	init = 1;
 	playing = 1;
@@ -941,7 +959,7 @@ function drawScreen() {
 		context.font = "12px Arial";
 		context.textAlign = "right";
 		context.fillText("Tempo: "+tempo, scope.width, 6);
-		context.fillText("Ticks/Row: "+spd, scope.width, 18);
+		context.fillText("Ticks per row: "+spd, scope.width, 18);
 		context.fillText("Pos: "+hexTextA[curpos>>4]+hexTextA[curpos&0xF]+"/"+(hexTextA[(songleng-1)>>4]+hexTextA[(songleng-1)&0xF]), scope.width, 30);
 		context.fillText("Row: "+hexTextA[currow>>4]+hexTextA[currow&0xF], scope.width, 42);
 		context.fillText("Pattern: "+patternorder[curpos], scope.width, 54);
@@ -972,9 +990,9 @@ function drawScreen() {
 				var k = 0;
 				var txt = "";
 				if (note.period!=0) {
-					while (k<61) {
+					while (k<85) {
 				//	while (k<periodTableFT2.length) {
-						if (note.period==periodTableExt[k]) {
+						if (note.period>=(ProTrackerTunedPeriods[k%12]<<1)>>(Math.floor(k/12)+(amigaFreqLimits ? 1 : 0))) {
 					//	if (note.period==periodTableFT2[k]) {
 							notenum = k;
 							break;
@@ -998,6 +1016,10 @@ function drawScreen() {
 				if (note.effect!=0) {
 					da = note.effect&0xF;
 					db = (note.effect&0xF0)>>4;
+					if (((note.effect&0xF00)>>8)==8) {
+						da = ((note.effect&0xFF)<<1)&0xF;
+						db = ((note.effect&0xFF)<<1)>>4;
+					}
 					dc = (note.effect&0xF00)>>8;
 					context.fillStyle = "#dddddd";
 					//Too lazy to use switch (dc)
@@ -1028,6 +1050,8 @@ function drawScreen() {
 	context.fillStyle = "#000000";
     context.fillRect(0, 0, modview.width, modview.height);
 	
+	pvrow = currow;
+//	pvdelay = patdelay;
 	var patscroll = -6+(pvrow+1)*-12;
 	if (smoothScrolling&&pvdelay==0) patscroll-=(tick/spd*12);
 //	if (smoothScrolling&&(!patbrk>=0&&!patjmp>=0&&pvdelay==0&&pvrow>0)) patscroll=-8+(pvrow+2)*-16-(tick/spd*16);
