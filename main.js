@@ -15,6 +15,7 @@ var stereomulAmiga = .5;
 var stereomulnonAmiga = .75;
 var stereomul = .5;
 var volRampSpd = 10;
+var volRampNewSmp = 10;
 var stereo = false;
 
 var amigaFreq = 7093790;//7093789.2;//7158728;
@@ -418,7 +419,7 @@ function mixChannels() {
 	while (a<numofchannels) {
 		var res = 0;
 		var ch = channels[a];
-		if (ch.sample != 32 && ch.period != 0) {
+		if (ch.sample != 32 && ch.period != 0 && samples[ch.sample].leng > 0) {
 			var smp = samples[ch.sample];
 /*			if (!ch.active) {
 				ch.active = true;
@@ -439,7 +440,7 @@ function mixChannels() {
 		
 			//if (ch.arpeggioperiod!=0) ch.pos += amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
 			//else ch.pos += amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
-			ch.pos += ch.delta;
+			if (ch.startcount > volRampNewSmp) ch.pos += ch.delta;
 			
 			if (smp.repeatleng>2) {
 				if (ch.pos<smp.repeatpoint) ch.looping = false;
@@ -448,19 +449,29 @@ function mixChannels() {
 					ch.looping = true;
 				}
 			} else if (ch.pos>=smp.leng) {
+				ch.endsmp = smp.data[smp.leng - 1]/4096*ch.volfinal;
+				ch.endcount = 0;
 				ch.sample = 32;
 			}
 			
 			if (ch.pos<=smp.leng) {
-				if (interpolation) {
-					var prevdata = smp.data[Math.floor(ch.pos)-1];
-					if (Math.floor(ch.pos)-1<0) prevdata=0;
-					if ((Math.floor(ch.pos)<=smp.repeatpoint) && ch.looping) prevdata = smp.data[smp.repeatpoint + smp.repeatleng - 1];
-					var dy = smp.data[Math.floor(ch.pos)]-prevdata;
-					var ix = ch.pos-Math.floor(ch.pos);
-					//res = (prevdata+dy*ix)/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
-					res = (prevdata+dy*ix)/4096*ch.volfinal;
-				} else res=smp.data[Math.floor(ch.pos)]/4096*ch.volfinal;
+				if (ch.startcount > volRampNewSmp) {
+					if (interpolation) {
+						var prevdata = smp.data[Math.floor(ch.pos)-1];
+						if (Math.floor(ch.pos)-1<0) prevdata=0;
+						if ((Math.floor(ch.pos)<=smp.repeatpoint) && ch.looping) prevdata = smp.data[smp.repeatpoint + smp.repeatleng - 1];
+						var dy = smp.data[Math.floor(ch.pos)]-prevdata;
+						var ix = ch.pos-Math.floor(ch.pos);
+						//res = (prevdata+dy*ix)/4096*((ch.volume+ch.treamp*Math.sin(ch.trepos/32*Math.PI)*4)/64);
+						res = (prevdata+dy*ix)/4096*ch.volfinal;
+					} else res=smp.data[Math.floor(ch.pos)]/4096*ch.volfinal;
+					if (ch.startcount < volRampNewSmp << 1) res*=(ch.startcount - 10)/volRampNewSmp;
+					ch.prevsmp = res;
+				} else {
+					res = ch.prevsmp * (volRampNewSmp - ch.startcount)/volRampNewSmp;
+				}
+				if (ch.startcount < volRampNewSmp << 1) ch.startcount ++ ;
+
 				if (!ch.mute&&res!=undefined&&res!=NaN) {
 					if (ch.pan!=-1) {
 						var panL = 1;
@@ -483,6 +494,29 @@ function mixChannels() {
 			}
 		} else {
 			ch.pos = 0;
+			ch.prevsmp = 0;
+			if (ch.endcount < volRampNewSmp) {
+				res = ch.endsmp*(volRampNewSmp - ch.endcount)/volRampNewSmp;
+				if (ch.pan!=-1) {
+					var panL = 1;
+					var panR = 1;
+					if (ch.pan<127) panR=ch.pan/127;
+					else panL=1-(ch.pan-127)/128;
+					outL += res*panL;
+					outR += res*panR;
+				} else {
+					if (a%4==0||a%4==3) {
+						outL += res;
+						outR += res*(1-stereomul);
+					} else {
+						outR += res;
+						outL += res*(1-stereomul);
+					}
+				}
+				outM += res;
+
+				ch.endcount ++ ;
+			}
 		//	ch.active = false;
 		}
 		scopeData[a][scopePos]=res;
@@ -490,7 +524,7 @@ function mixChannels() {
 	}
 	scopePos++;
 	if (scopePos>=bufferSize) scopePos=0;
-	return [outL, outR, outM/2];
+	return [outL, outR, outM/1.4];
 }
 
 function modmain(ac) {
@@ -624,7 +658,7 @@ function nextTick() {
 				if (channel.delaysample!=0) {
 					channel.ofs = 0;
 					channel.volume=samples[channel.delaysample-1].vol;
-					if (channel.delaysample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=0;
+					if (channel.delaysample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=channel.startcount=0;
 					if (effect!=3) channel.sampleold=channel.delaysample-1;
 					if (effect!=3&&effect!=5&&effect!=9&&!channel.slid) channel.sample=channel.sampleold;
 				}
@@ -639,7 +673,10 @@ function nextTick() {
 					} else channel.targetperiod=(ProTrackerTunedPeriods[channel.delaynote%12+finetune*12]<<1)>>(Math.floor(channel.delaynote/12)+(amigaFreqLimits ? 1 : 0));
 				//	channel.targetperiod=Math.ceil(periodTableFT2[channel.note]-fineperiod);
 				//	channel.targetperiod=((PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(1-(finetune/16-Math.floor(finetune/16)))+PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(finetune/16-Math.floor(finetune/16)))*16/2^Math.floor(channel.note/12));
-					if (effect!=9&&effect!=3&&effect!=5) channel.pos=channel.ofs;
+					if (effect!=9&&effect!=3&&effect!=5) {
+						channel.pos = channel.ofs;
+						channel.startcount = 0;
+					}
 					if (effect!=3&&effect!=5) {
 						channel.slid = false;
 						if (effect==0&&para!=0) channel.arpeggioperiod=channel.period=channel.targetperiod;
@@ -736,7 +773,7 @@ function nextRow() {
 				if (note.sample!=0) {
 					channel.ofs = 0;
 					channel.volume=samples[note.sample-1].vol;
-				//	if (note.sample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=0;
+				//	if (note.sample-1!=channel.sample&&effect!=3&&effect!=4&&effect!=9) channel.pos=channel.startcount=0;
 					if (effect!=3&&effect!=5) channel.sampleold=note.sample-1;
 					if (effect!=3&&effect!=5&&effect!=9&&!channel.slid) channel.sample=channel.sampleold;
 				}
@@ -751,7 +788,11 @@ function nextRow() {
 					} else channel.targetperiod=(ProTrackerTunedPeriods[channel.note%12+finetune*12]<<1)>>(Math.floor(channel.note/12)+(amigaFreqLimits ? 1 : 0));
 				//	channel.targetperiod=Math.ceil(periodTableFT2[channel.note]-fineperiod);
 				//	channel.targetperiod=((PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(1-(finetune/16-Math.floor(finetune/16)))+PeriodTab[Math.floor((channel.note%12)*8 + finetune/16)]*(finetune/16-Math.floor(finetune/16)))*16/2^Math.floor(channel.note/12));
-					if (effect!=9&&effect!=3&&effect!=5) channel.pos=channel.ofs;
+					if (effect!=9&&effect!=3&&effect!=5)
+					{
+						channel.startcount = 0;
+						channel.pos = channel.ofs;
+					}
 					if (effect!=3&&effect!=5) {
 						channel.slid = false;
 						if (effect==0&&para!=0) channel.arpeggioperiod=channel.period=channel.targetperiod;
@@ -764,7 +805,11 @@ function nextRow() {
 				if ((note.sample!=0||note.period!=0)&&effect==9) {
 					channel.ofs=para*256;
 					if (channel.ofs!=0) channel.ofsold=channel.ofs;
-					if (note.period!=0) channel.pos=channel.ofsold;
+					if (note.period!=0)
+					{
+						channel.startcount = 0;
+						channel.pos = channel.ofsold;
+					}
 				}
 			} else {
 				channel.delay = para&0xF;
@@ -838,6 +883,10 @@ function resetChannels() {
 			'sample':	32,
 			'sampleold':	32,
 			'pos':		0,
+			'startcount':	0,
+			'endcount':	0,
+			'prevsmp':	0,
+			'endsmp':	0,
 			'looping':	false,
 			'ofs':		0,
 			'ofsold':	0,
