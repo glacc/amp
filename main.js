@@ -569,6 +569,30 @@ function updateChannelInfo()
 {
 	var a = 0;
 	while (a<numofchannels) {
+		
+		var channel = channels[a];
+		var effect = channel.effect;
+		var para = channel.para;
+		
+		if (effect==0&&para!=0) {
+		//	var arpeggio = [0, para>>4, para&0xF];
+		//	var finetune = 0;
+		//	if (samples[channel.sample]!=undefined) finetune=samples[channel.sample].finetune;
+		//	var fineperiod = (((59-(channel.note+arpeggio[(tick+1)%3]))/16)*finetune);
+			if (amigaFreqLimits) {
+				var arpeggio = [0, para>>4, para&0xF];
+				channel.arpeggioperiod = Math.max(108, Math.min(907, periodTable[channel.periodOfs+arpeggio[tick%3]]));
+			} else {
+				var arpeggio = [0, para&0xF, para>>4];
+			//	var arpeggionote = (channel.note+arpeggio[(tick+1)%3]);
+				var arpeggionote = (channel.note+arpeggio[tick%3]);
+				channel.arpeggioperiod=(ProTrackerTunedPeriods[samples[channel.sample].finetune*12+arpeggionote%12]<<1)>>(Math.floor(arpeggionote/12)+(amigaFreqLimits ? 1 : 0));
+			}
+		//	channel.arpeggioperiod = periodTableFT2[channel.note+arpeggio[(tick+1)%3]]-fineperiod;
+		} else {
+			channel.arpeggioperiod = 0;
+		}
+		
 		var ch = channels[a];
 		if (ch.arpeggioperiod!=0) ch.delta = amigaFreq/(ch.arpeggioperiod+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
 		else ch.delta = amigaFreq/(ch.period+ch.vibamp*Math.sin(ch.vibpos/32*Math.PI)*2)/2/smprate;
@@ -580,12 +604,14 @@ function updateChannelInfo()
 function nextTick() {
 	while (timer_0 >= t0) timer_0 -= t0;
 	tick ++ ;
+	
 	if (tick >= spd) {
-		tick = 0;
 		nextRow();
 		updateChannelInfo();
+		tick = 0;
 		return;
 	}
+	
 	a = 0;
 	while (a<numofchannels) {
 		var channel = channels[a];
@@ -593,6 +619,7 @@ function nextTick() {
 		var para = channel.para;
 		if (channel.delay<=-1) {
 			
+			/*
 			if (effect==0&&para!=0) {
 			//	var arpeggio = [0, para>>4, para&0xF];
 			//	var finetune = 0;
@@ -610,7 +637,8 @@ function nextTick() {
 			//	channel.arpeggioperiod = periodTableFT2[channel.note+arpeggio[(tick+1)%3]]-fineperiod;
 			} else {
 				channel.arpeggioperiod = 0;
-			}
+			}*/
+			
 			if (effect==1) {
 				channel.period -= para;
 			} else if (effect==2) {
