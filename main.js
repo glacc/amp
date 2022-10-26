@@ -1,4 +1,4 @@
-//Amiga module player by Glacc
+﻿//Amiga module player by Glacc
 //
 //Unsupported effects :
 //
@@ -23,16 +23,12 @@ var interpolation = true;
 var amigaFreqLimits = true;
 var smoothScrolling = false;
 
-var AudioContext = window.AudioContext || window.webkitAudioContext;
-var audioCtx = new AudioContext();
-var gainNode = audioCtx.createGain();
-gainNode.gain.value = 5;
-gainNode.connect(audioCtx.destination);
-var scriptNode = audioCtx.createScriptProcessor(bufferSize, 0, 2);
-var smprate = audioCtx.sampleRate;
-console.log("Buffer size: " + scriptNode.bufferSize);
-console.log("Sample rate: " + audioCtx.sampleRate);
-console.log("Max FPS: " + smprate/bufferSize);
+var AudioContext;
+var audioCtx;
+var gainNode;
+var scriptNode;
+var smprate;
+var audioContextCreated = false;
 
 var songname_canvas,samples_canvas;
 var pattern_canvas = document.createElement("canvas");
@@ -64,6 +60,7 @@ var volR = 0;
 var currow = 0;
 var curpos = 0;
 var oldpos = 128;
+var oldrow = 64;
 var patbrk = -1;
 var patjmp = -1;
 var patdelay = 0;
@@ -956,6 +953,7 @@ function initialize_player() {
 	tempo = 125;
 	spd = 6;
 	oldpos = 128;
+	oldrow = 64;
 
 	currow = -1;
 	curpos = 0;
@@ -1001,9 +999,9 @@ function drawScreen() {
 	var context = scope.getContext("2d");
 	var scrwidth = 164+numofchannels*100;
 	if (scrwidth<564) scrwidth=564;
-	modview.width=scope.width=scrwidth;
+	scope.width=scrwidth;
 	context.fillStyle = "#000000";
-    context.fillRect(0, 0, scope.width, scope.height);
+	context.fillRect(0, 0, scope.width, scope.height);
 	context.textBaseline = "middle";
 	var i = 0;
 	var j;
@@ -1013,6 +1011,7 @@ function drawScreen() {
 		if (init) {
 			if (channels[i].mute) context.strokeStyle = '#cc0000';
 		}
+
         context.beginPath();
 		if (init) {
 			var k = scopePos;
@@ -1032,6 +1031,7 @@ function drawScreen() {
 		
 		i++;
 	}
+
 	if (init) {
 		context.font = "12px Arial";
 		context.textAlign = "right";
@@ -1041,6 +1041,7 @@ function drawScreen() {
 		context.fillText("Row: "+hexTextA[currow>>4]+hexTextA[currow&0xF], scope.width, 42);
 		context.fillText("Pattern: "+patternorder[curpos], scope.width, 54);
 	}
+
 	context = pattern_canvas.getContext("2d");
 	context.textBaseline = "middle";
 	if (init&&curpos!=oldpos) {
@@ -1123,28 +1124,33 @@ function drawScreen() {
 			i++;
 		}
 	}
-	context = modview.getContext("2d");
-	context.fillStyle = "#000000";
-    context.fillRect(0, 0, modview.width, modview.height);
-	
-	pvrow = currow;
-//	pvdelay = patdelay;
-	var patscroll = -6+(pvrow+1)*-12;
-	if (smoothScrolling&&pvdelay==0) patscroll-=(tick/spd*12);
-//	if (smoothScrolling&&(!patbrk>=0&&!patjmp>=0&&pvdelay==0&&pvrow>0)) patscroll=-8+(pvrow+2)*-16-(tick/spd*16);
-	if (smoothScrolling&&pvdelay!=0) patscroll-=(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay+1))*12;
+
+	if (smoothScrolling || currow != oldrow || curpos != oldpos) { 
+		modview.width=scrwidth;
+		context = modview.getContext("2d");
+		context.fillStyle = "#000000";
+		context.fillRect(0, 0, modview.width, modview.height);
+		
+		pvrow = currow;
+	//	pvdelay = patdelay;
+		var patscroll = -6+(pvrow+1)*-12;
+		if (smoothScrolling&&pvdelay==0) patscroll-=(tick/spd*12);
+	//	if (smoothScrolling&&(!patbrk>=0&&!patjmp>=0&&pvdelay==0&&pvrow>0)) patscroll=-8+(pvrow+2)*-16-(tick/spd*16);
+		if (smoothScrolling&&pvdelay!=0) patscroll-=(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay+1))*12;
 	/*	if (pvdelay==patdelay) patscroll+=16-(tick/spd*16);
-	//	else
-	//	patscroll+=16-(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay))*16;
-	}*/
-	context.fillStyle = "#444444";
-	if (init) {
-		if (smoothScrolling) context.fillRect(0, Math.round(modview.height/2+patscroll+(pvrow+1)*12), modview.width, 12);
-		else context.fillRect(0, modview.height/2-6, modview.width, 12);
-	}
-	context.drawImage(pattern_canvas, Math.round(modview.width/2-pattern_canvas.width/2), Math.round(patscroll+modview.height/2));
-	
+			else
+			patscroll+=16-(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay))*16;
+		}*/
+		context.fillStyle = "#444444";
+		if (init) {
+			if (smoothScrolling) context.fillRect(0, Math.round(modview.height/2+patscroll+(pvrow+1)*12), modview.width, 12);
+			else if (currow != oldrow) context.fillRect(0, modview.height/2-6, modview.width, 12);
+		}
+		context.drawImage(pattern_canvas, Math.round(modview.width/2-pattern_canvas.width/2), Math.round(patscroll+modview.height/2));
+	}	
+
 	oldpos = curpos;
+	oldrow = currow;
 	if (playing) {
 		window.requestAnimationFrame(drawScreen);
 	}
@@ -1187,11 +1193,35 @@ window.onload = function () {
 			} else {
 				scriptNode.connect(audioCtx.destination);
 				play_btn.innerHTML = "Pause";
+
+				//https://github.com/a1k0n/jsxm/
+				// hack to get iOS to play anything
+				var temp_osc = audioCtx.createOscillator();
+				temp_osc.connect(audioCtx.destination);
+				!!temp_osc.start ? temp_osc.start(0) : temp_osc.noteOn(0);
+				!!temp_osc.stop ? temp_osc.stop(0) : temp_osc.noteOff(0);
+				temp_osc.disconnect();
+
 				window.requestAnimationFrame(drawScreen);
 			}
 		}
 	}
 	load_btn.onclick = function () {
+		if (!audioContextCreated) {
+			AudioContext = window.AudioContext || window.webkitAudioContext;
+			audioCtx = new AudioContext();
+			gainNode = audioCtx.createGain();
+			gainNode.gain.value = 5;
+			gainNode.connect(audioCtx.destination);
+			scriptNode = audioCtx.createScriptProcessor(bufferSize, 0, 2);
+			smprate = audioCtx.sampleRate;
+			console.log("Buffer size: " + scriptNode.bufferSize);
+			console.log("Sample rate: " + audioCtx.sampleRate);
+			console.log("Max FPS: " + smprate/bufferSize);
+			
+			audioContextCreated = true;
+		}
+
 		var selectedFile = document.getElementById('xmfile').files[0];
 		var reader = new FileReader();
 		play_btn.innerHTML = "Play";
