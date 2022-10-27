@@ -1322,6 +1322,7 @@ window.onload = function () {
 				!!temp_osc.stop ? temp_osc.stop(0) : temp_osc.noteOff(0);
 				temp_osc.disconnect();
 				
+				desiredFPS = desiredfps_num.value;
 				patTimer = setInterval(function() {jmpSel.selectedIndex = curpos;}, 100);
 				drawTimer = setInterval(function() {
 					drawReq = true;
@@ -1332,6 +1333,11 @@ window.onload = function () {
 	}
 	
 	load_btn.onclick = function () {
+		if (playing) {
+			clearInterval(patTimer);
+			clearInterval(drawTimer);
+		}
+		
 		if (!audioContextCreated) {
 			AudioContext = window.AudioContext || window.webkitAudioContext;
 			audioCtx = new AudioContext();
