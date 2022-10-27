@@ -10,6 +10,9 @@
 //
 
 var bufferSize = 1024;
+var desiredFPS = 30;
+var maxFPS = 60;
+var patternDrawSpd = 2;
 
 var stereomulAmiga = .5;
 var stereomulnonAmiga = .75;
@@ -31,7 +34,13 @@ var smprate;
 var audioContextCreated = false;
 
 var songname_canvas,samples_canvas;
-var pattern_canvas = document.createElement("canvas");
+var pattern_canvas_a = document.createElement("canvas");
+var pattern_canvas_b = document.createElement("canvas");
+var pattern_canvas = pattern_canvas_a;
+var pattern_swap = false;
+var drawPos = 0;
+var drawReq = false;
+var fullRedrawed = false;
 
 var a = 0;
 
@@ -76,6 +85,7 @@ var tempo;
 var init = 0;
 var playing = 0;
 var timer_0 = 0;
+var timer_1 = 0;
 var t0 = 0;
 
 var logrow = false;
@@ -86,6 +96,7 @@ var logbuf = false;
 var noteText = ["Ｃ－","Ｃ＃","Ｄ－","Ｄ＃","Ｅ－","Ｆ－","Ｆ＃","Ｇ－","Ｇ＃","Ａ－","Ａ＃","Ｂ－"];
 var hexTextA = ["0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"];
 var hexTextB = ["０","１","２","３","４","５","６","７","８","９","Ａ","Ｂ","Ｃ","Ｄ","Ｅ","Ｆ"];
+var decText = ["０","１","２","３","４","５","６","７","８","９"];
 var pvrow = -1;
 var pvdelay = 0;
 var pvupdated = false;
@@ -185,8 +196,8 @@ var periodTable = periodTableMod;
       640,636,632,628,623,619,614,610,604,601,597,592,588,584,580,575,
       570,567,563,559,555,551,547,543,538,535,532,528,524,520,516,513,
       508,505,502,498,494,491,487,484,480,477,474,470,467,463,460,457];
-/*
 */
+
 function getstring(dv, offset, len) {
   var str = [];
   for (var i = offset; i < offset+len; i++) {
@@ -403,6 +414,29 @@ function load_module() {
 	if (!amigaFreqLimits) {
 		if (cursor.getUint8(951)!=127) rstpos=cursor.getUint8(951);
 		console.log("Restart position: " + rstpos);
+	}
+	
+	while (muteSelector.length)
+		muteSelector.remove(0);
+	
+	i = 0;
+	while (i < numofchannels) {	
+		var opt = document.createElement("option");
+		opt.text = "Ch " + (i+1);
+		muteSelector.add(opt, null);
+		i ++ ;
+	}
+	
+	while (jmpSel.length)
+		jmpSel.remove(0);
+	
+	i = 0;
+	while (i<songleng)
+	{
+		var opt = document.createElement("option");
+		opt.innerHTML = hexTextA[i>>4] + hexTextA[i&0xF] + " (" + hexTextA[patternorder[i]>>4] + hexTextA[patternorder[i]&0xF] + ")";
+		jmpSel.add(opt, null);
+		i ++ ;
 	}
 	
 	loaded = 1;
@@ -730,6 +764,7 @@ function nextRow() {
 		if (!pvupdated) pvdelay = 0;
 		currow ++ ;
 		if (patbrk>=0) {
+            drawPos = -1;
 			currow = patbrk;
 			patbrk=repto=-1;
 			patrep=reppos=0;
@@ -943,17 +978,12 @@ function resetChannels() {
 	}
 }
 
-function initialize_player() {
-	gainNode.connect(audioCtx.destination);
-	scriptNode.connect(gainNode);
-	scriptNode.onaudioprocess = modmain;
-	
-	volume = 1.0;
-	
-	tempo = 125;
-	spd = 6;
-	oldpos = 128;
+function resetPlayerPatJmp()
+{
+	pattern_swap = false;
+    oldpos = 128;
 	oldrow = 64;
+    drawPos = -1;
 
 	currow = -1;
 	curpos = 0;
@@ -966,6 +996,19 @@ function initialize_player() {
 	tick = 0;
 	
 	timer_0 = timer_1 = 0;
+}
+
+function initialize_player() {
+	gainNode.connect(audioCtx.destination);
+	scriptNode.connect(gainNode);
+	scriptNode.onaudioprocess = modmain;
+	
+	volume = 1.0;
+	
+	tempo = 125;
+	spd = 6;
+	
+    resetPlayerPatJmp();
 	
 	resetChannels();
 	
@@ -973,10 +1016,17 @@ function initialize_player() {
 	playing = 1;
 }
 
-function unmuteAll() {
+function posJmp(val) {
+	resetPlayerPatJmp();
+	curpos = val;
+	
+	resetChannels();
+}
+
+function muteAll(val) {
 	var i = 0;
 	while (i<numofchannels) {
-		channels[i].mute = false;
+		channels[i].mute = val;
 		i++;
 	}
 }
@@ -990,147 +1040,191 @@ function solo(ch) {
 }
 
 function mute(ch) {
+    if (channels[ch] == undefined) return;
 	channels[ch].mute = !channels[ch].mute;
 }
-	
+
 function drawScreen() {
+	
+	var draw = maxFPS < desiredFPS || drawReq;
 	var modview = document.getElementById("pattern");
-	var scope = document.getElementById("scope");
-	var context = scope.getContext("2d");
-	var scrwidth = 164+numofchannels*100;
-	if (scrwidth<564) scrwidth=564;
-	scope.width=scrwidth;
-	context.fillStyle = "#000000";
-	context.fillRect(0, 0, scope.width, scope.height);
-	context.textBaseline = "middle";
-	var i = 0;
-	var j;
-	while (i<numofchannels) {
-		j = 0;
-		context.strokeStyle = '#ccccff';
-		if (init) {
-			if (channels[i].mute) context.strokeStyle = '#cc0000';
-		}
-
-        context.beginPath();
-		if (init) {
-			var k = scopePos;
-			while (j<bufferSize) {
-				context.lineTo(100*i+j*(100/bufferSize), (scopeData[i][k]/0.03125)*39.5+40);
-				k++;
-				if (k>=bufferSize) k=0;
-				j++;
+	if (draw) {
+		var scope = document.getElementById("scope");
+		var context = scope.getContext("2d");
+		var scrwidth = 164+numofchannels*100;
+		if (scrwidth<564) scrwidth=564;
+		scope.width=scrwidth;
+		context.fillStyle = "#000000";
+		context.fillRect(0, 0, scope.width, scope.height);
+		context.textBaseline = "middle";
+		var i = 0;
+		var j;
+		while (i<numofchannels) {
+			j = 0;
+			context.strokeStyle = '#ccccff';
+			if (init) {
+				if (channels[i].mute) context.strokeStyle = '#cc0000';
 			}
-			context.stroke();
+
+			context.beginPath();
+			if (init) {
+				var k = scopePos;
+				while (j<bufferSize) {
+					context.lineTo(100*i+j*(100/bufferSize), (scopeData[i][k]/0.03125)*39.5+40);
+					k++;
+					if (k>=bufferSize) k=0;
+					j++;
+				}
+				context.stroke();
+			}
+
+			context.font = "16px bold Arial";
+			context.fillStyle = "#ffffff";
+			context.textAlign = "left";
+			context.fillText((i+1), i*100, 8);
+
+			i++;
 		}
-		
-		context.font = "16px bold Arial";
-		context.fillStyle = "#ffffff";
-		context.textAlign = "left";
-		context.fillText((i+1), i*100, 8);
-		
-		i++;
+
+		if (init) {
+			context.font = "12px Arial";
+			context.textAlign = "right";
+			context.fillText("Tempo: "+(tempo >= 100 ? decText[Math.floor(tempo/100)] : "　")+(tempo >= 10 ? decText[Math.floor(tempo%100/10)] : "　")+decText[tempo%10], scope.width, 6);
+			context.fillText("Ticks per row: 　"+(spd >= 10 ? decText[Math.floor(spd/10)] : "　")+decText[spd%10], scope.width, 18);
+			context.fillText("Pos: "+hexTextB[curpos>>4]+hexTextB[curpos&0xF]+"／"+(hexTextB[(songleng-1)>>4]+hexTextB[(songleng-1)&0xF]), scope.width, 30);
+			context.fillText("Row: "+hexTextB[currow>>4]+hexTextB[currow&0xF]+"　　　", scope.width, 42);
+			context.fillText("Pattern: "+hexTextB[patternorder[curpos]>>4]+hexTextB[patternorder[curpos]&0xF]+"　　　", scope.width, 54);
+		}	
 	}
 
-	if (init) {
-		context.font = "12px Arial";
-		context.textAlign = "right";
-		context.fillText("Tempo: "+tempo, scope.width, 6);
-		context.fillText("Ticks per row: "+spd, scope.width, 18);
-		context.fillText("Pos: "+hexTextA[curpos>>4]+hexTextA[curpos&0xF]+"/"+(hexTextA[(songleng-1)>>4]+hexTextA[(songleng-1)&0xF]), scope.width, 30);
-		context.fillText("Row: "+hexTextA[currow>>4]+hexTextA[currow&0xF], scope.width, 42);
-		context.fillText("Pattern: "+patternorder[curpos], scope.width, 54);
-	}
-
+	var fullRedraw = drawPos < 0;
+	if (init&&curpos!=oldpos&&!fullRedraw) pattern_swap = !pattern_swap;
+		
+	pattern_canvas = pattern_swap ? pattern_canvas_b : pattern_canvas_a;
 	context = pattern_canvas.getContext("2d");
-	context.textBaseline = "middle";
 	if (init&&curpos!=oldpos) {
+	//	/*
 		pattern_canvas.width = 0;
 		pattern_canvas.height = 0;
 		pattern_canvas.width = 30+numofchannels*100;
 		pattern_canvas.height = 780;
+	//	*/
+		drawPos = 0;
+	}
+	
+/*
+	var i = currow-12;
+	if (i<0) i=0;
+	var l = i+24;
+	i = 0;
+	while (i<l) {
+		if (i>=64) break;
+*/
+	
+	if (init) {
+		var targetDrawPos = drawPos + patternDrawSpd;
+		if (fullRedraw) {
+			drawPos = 0;
+			targetDrawPos = 64;
+		}
+		if (targetDrawPos > 64) targetDrawPos = 64;
+
+	//	/*
+		if (fullRedrawed) {
+			pattern_canvas.width = 0;
+			pattern_canvas.height = 0;
+			pattern_canvas.width = 30+numofchannels*100;
+			pattern_canvas.height = 780;
+			drawPos = 0;
+			fullRedrawed = false;
+		}
+	//	*/
+		
+		context.textBaseline = "bottom";
 		context.font = "12px Arial";
 		context.fillStyle = "#000000";
-	//	var i = currow-12;
-	//	if (i<0) i=0;
-	//	var l = i+24;
-		i = 0;
-	//	while (i<l) {
-	//		if (i>=64) break;
-		while (i<64) {
-			j = 0;
-			context.fillStyle = "#ffffff";
-			context.textAlign = "left";
-			context.fillText(hexTextB[i>>4]+hexTextB[i&0xF], 0, 24+i*12);
-			while (j<numofchannels) {
-				var note = patterndata[patternorder[curpos]][i][j];
-				var notenum = 0;
-				var k = 0;
-				var txt = "";
-				if (note.period!=0) {
-					while (k<85) {
-				//	while (k<periodTableFT2.length) {
-						if (note.period>=(ProTrackerTunedPeriods[k%12]<<1)>>(Math.floor(k/12)+(amigaFreqLimits ? 1 : 0))) {
-					//	if (note.period==periodTableFT2[k]) {
-							notenum = k;
-							break;
-						}
-						k++;
-					}
-					txt = noteText[notenum%12]+(Math.floor(notenum/12)+2);
-				} else txt="－－－";
+		
+		if (drawPos < 64) {
+			i = drawPos;
+			var patPos = curpos + (fullRedraw ? 0 : 1);
+			while (i<targetDrawPos) {
+				j = 0;
 				context.fillStyle = "#ffffff";
 				context.textAlign = "left";
-				context.fillText(txt, 30+j*100, 24+i*12);
-				var da,db,dc;
-				if (note.sample!=0) {
-					da = note.sample&0xF;
-					db = note.sample>>4;
-					txt = hexTextB[db]+hexTextB[da];
-				} else txt="－－";
-				context.fillStyle = "#ccccff";
-				context.textAlign = "left";
-				context.fillText(txt,66+j*100, 24+i*12);
-				if (note.effect!=0) {
-					da = note.effect&0xF;
-					db = (note.effect&0xF0)>>4;
-					if (((note.effect&0xF00)>>8)==8) {
-						da = ((note.effect&0xFF)<<1)&0xF;
-						db = ((note.effect&0xFF)<<1)>>4;
-					}
-					dc = (note.effect&0xF00)>>8;
-					context.fillStyle = "#dddddd";
-					//Too lazy to use switch (dc)
-					if (dc==0) context.fillStyle = "#dddddd";
-					else if (dc<=4) context.fillStyle = "#cc8822";
-					else if (dc<=6) context.fillStyle = "#ccccff";
-					else if (dc==7) context.fillStyle = "#cc8822";
-					else if (dc<=9) context.fillStyle = "#888888";
-					else if (dc<=10) context.fillStyle = "#00cc00";
-					else if (dc==11) context.fillStyle = "#cc0000";
-					else if (dc==12) context.fillStyle = "#00cc00";
-					else if (dc==13) context.fillStyle = "#cc0000";
-					else if (dc==14) context.fillStyle = "#999999";
-					else if (dc==15) context.fillStyle = "#cc0000";
-					txt = hexTextB[dc]+hexTextB[db]+hexTextB[da];
-				} else {
+				context.fillText(hexTextB[i>>4]+hexTextB[i&0xF], 0, 24+i*12);
+				while (j<numofchannels) {
+					var note = patterndata[patternorder[patPos]][i][j];
+					var notenum = 0;
+					var k = 0;
+					var txt = "";
+					if (note.period!=0) {
+						while (k<85) {
+					//	while (k<periodTableFT2.length) {
+							if (note.period>=(ProTrackerTunedPeriods[k%12]<<1)>>(Math.floor(k/12)+(amigaFreqLimits ? 1 : 0))) {
+						//	if (note.period==periodTableFT2[k]) {
+								notenum = k;
+								break;
+							}
+							k++;
+						}
+						txt = noteText[notenum%12]+(Math.floor(notenum/12)+2);
+					} else txt="－－－";
+					context.fillStyle = "#ffffff";
+					context.textAlign = "left";
+					context.fillText(txt, 30+j*100, 24+i*12);
+					var da,db,dc;
+					if (note.sample!=0) {
+						da = note.sample&0xF;
+						db = note.sample>>4;
+						txt = hexTextB[db]+hexTextB[da];
+					} else txt="－－";
 					context.fillStyle = "#ccccff";
-					txt="－－－";
+					context.textAlign = "left";
+					context.fillText(txt,66+j*100, 24+i*12);
+					if (note.effect!=0) {
+						da = note.effect&0xF;
+						db = (note.effect&0xF0)>>4;
+						if (((note.effect&0xF00)>>8)==8) {
+							da = ((note.effect&0xFF)<<1)&0xF;
+							db = ((note.effect&0xFF)<<1)>>4;
+						}
+						dc = (note.effect&0xF00)>>8;
+						context.fillStyle = "#dddddd";
+						//Too lazy to use switch (dc)
+						if (dc==0) context.fillStyle = "#dddddd";
+						else if (dc<=4) context.fillStyle = "#cc8822";
+						else if (dc<=6) context.fillStyle = "#ccccff";
+						else if (dc==7) context.fillStyle = "#cc8822";
+						else if (dc<=9) context.fillStyle = "#888888";
+						else if (dc<=10) context.fillStyle = "#00cc00";
+						else if (dc==11) context.fillStyle = "#cc0000";
+						else if (dc==12) context.fillStyle = "#00cc00";
+						else if (dc==13) context.fillStyle = "#cc0000";
+						else if (dc==14) context.fillStyle = "#999999";
+						else if (dc==15) context.fillStyle = "#cc0000";
+						txt = hexTextB[dc]+hexTextB[db]+hexTextB[da];
+					} else {
+						context.fillStyle = "#ccccff";
+						txt="－－－";
+					}
+					context.textAlign = "left";
+					context.fillText(txt, 90+j*100, 24+i*12);
+					j++;
 				}
-				context.textAlign = "left";
-				context.fillText(txt, 90+j*100, 24+i*12);
-				j++;
+				i++;
 			}
-			i++;
 		}
+		if (drawPos<64) drawPos += patternDrawSpd;
+	}
+
+//	if (!fullRedraw) pattern_canvas = !pattern_swap ? pattern_canvas_b : pattern_canvas_a;
+	pattern_canvas = !pattern_swap ? pattern_canvas_b : pattern_canvas_a;
+	if (fullRedraw) {
+		pattern_swap = !pattern_swap;
+		fullRedrawed = true;
 	}
 
 	if (smoothScrolling || currow != oldrow || curpos != oldpos) { 
-		modview.width=scrwidth;
-		context = modview.getContext("2d");
-		context.fillStyle = "#000000";
-		context.fillRect(0, 0, modview.width, modview.height);
-		
 		pvrow = currow;
 	//	pvdelay = patdelay;
 		var patscroll = -6+(pvrow+1)*-12;
@@ -1141,31 +1235,52 @@ function drawScreen() {
 			else
 			patscroll+=16-(tick+spd*(pvdelay-patdelay))/(spd*(pvdelay))*16;
 		}*/
-		context.fillStyle = "#444444";
-		if (init) {
-			if (smoothScrolling) context.fillRect(0, Math.round(modview.height/2+patscroll+(pvrow+1)*12), modview.width, 12);
-			else if (currow != oldrow) context.fillRect(0, modview.height/2-6, modview.width, 12);
+		
+		var drawPat = currow != oldrow;
+		if (draw) {
+			modview.width=scrwidth;
+			context = modview.getContext("2d");
+			context.fillStyle = "#000000";
+			context.fillRect(0, 0, modview.width, modview.height);
+			
+			context.fillStyle = "#444444";
+			if (init) {
+				if (smoothScrolling) context.fillRect(0, Math.round(modview.height/2+patscroll+(pvrow+1)*12), modview.width, 12);
+				else if (drawPat) context.fillRect(0, modview.height/2-6, modview.width, 12);
+			}
+		
+			context.drawImage(pattern_canvas, Math.round(modview.width/2-pattern_canvas.width/2), Math.round(patscroll+modview.height/2));
 		}
-		context.drawImage(pattern_canvas, Math.round(modview.width/2-pattern_canvas.width/2), Math.round(patscroll+modview.height/2));
-	}	
+	}
 
+	drawReq = false;
 	oldpos = curpos;
-	oldrow = currow;
+	if (draw) {
+		oldrow = currow;
+	}
 	if (playing) {
 		window.requestAnimationFrame(drawScreen);
 	}
 }
 
+var muteSelector;
+var jmpSel;
+var patTimer;
 window.onload = function () {
+	
 	var play_btn = document.getElementById("playbtn");
 	var load_btn = document.getElementById("loadbtn");
 	var stereo_btn = document.getElementById("stereobtn");
 	var interpolation_btn = document.getElementById("interpolationbtn");
 	var smoothscroll_btn = document.getElementById("smoothscrollbtn");
+	var desiredfps_num = document.getElementById("desiredfps");
 	songname_canvas = document.getElementById("songname");
 	samples_canvas = document.getElementById("samples");
+	
+	drawReq = true;
 	drawScreen();
 	initInfoView();
+	
 	interpolation_btn.onclick = function () {
 		interpolation = !interpolation;
 		if (!interpolation) {
@@ -1174,6 +1289,7 @@ window.onload = function () {
 			interpolation_btn.innerHTML = "Interpolation On";
 		}
 	}
+	
 	smoothscroll_btn.onclick = function () {
 		smoothScrolling = !smoothScrolling;
 		if (!smoothScrolling) {
@@ -1182,6 +1298,7 @@ window.onload = function () {
 			smoothscroll_btn.innerHTML = "Smooth Scrolling On";
 		}
 	}
+	
 	play_btn.onclick = function () {
 		if (loaded) {
 			if (!init) initialize_player(); else {
@@ -1190,6 +1307,9 @@ window.onload = function () {
 			if (!playing) {
 				scriptNode.disconnect(audioCtx.destination);
 				play_btn.innerHTML = "Play";
+				
+				clearInterval(patTimer);
+				clearInterval(drawTimer);
 			} else {
 				scriptNode.connect(audioCtx.destination);
 				play_btn.innerHTML = "Pause";
@@ -1201,11 +1321,16 @@ window.onload = function () {
 				!!temp_osc.start ? temp_osc.start(0) : temp_osc.noteOn(0);
 				!!temp_osc.stop ? temp_osc.stop(0) : temp_osc.noteOff(0);
 				temp_osc.disconnect();
-
+				
+				patTimer = setInterval(function() {jmpSel.selectedIndex = curpos;}, 100);
+				drawTimer = setInterval(function() {
+					drawReq = true;
+				}, 1000 / desiredFPS);
 				window.requestAnimationFrame(drawScreen);
 			}
 		}
 	}
+	
 	load_btn.onclick = function () {
 		if (!audioContextCreated) {
 			AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1215,14 +1340,15 @@ window.onload = function () {
 			gainNode.connect(audioCtx.destination);
 			scriptNode = audioCtx.createScriptProcessor(bufferSize, 0, 2);
 			smprate = audioCtx.sampleRate;
+			maxFPS = smprate/bufferSize;
 			console.log("Buffer size: " + scriptNode.bufferSize);
 			console.log("Sample rate: " + audioCtx.sampleRate);
-			console.log("Max FPS: " + smprate/bufferSize);
+			console.log("Max FPS: " + maxFPS);
 			
 			audioContextCreated = true;
 		}
-
-		var selectedFile = document.getElementById('xmfile').files[0];
+		
+		var selectedFile = document.getElementById('modfile').files[0];
 		var reader = new FileReader();
 		play_btn.innerHTML = "Play";
 		reader.readAsArrayBuffer(selectedFile);
@@ -1237,9 +1363,12 @@ window.onload = function () {
 			loaded = 0;
 			init = 0;
 			load_module();
+
+			drawReq = true;
 			drawScreen();
 		}
 	}
+	
 	stereo_btn.onclick = function () {
 		stereo = !stereo;
 		if (!stereo) {
@@ -1247,5 +1376,47 @@ window.onload = function () {
 		} else {
 			stereo_btn.innerHTML = "Stereo";
 		}
+	}
+	
+	var fpsChange = function ()
+	{
+		desiredFPS = desiredfps_num.value;
+		if (playing) {
+			clearInterval(drawTimer);
+			drawTimer = setInterval(function() {
+				drawReq = true;
+			}, 1000 / desiredFPS);
+		}
+	}
+	
+	desiredfps_num.onmousedown = function() {
+		desiredfps_num.oninput = null;
+	}
+	
+	desiredfps_num.onmouseup = function () {
+		fpsChange();
+		desiredfps_num.oninput = fpsChange
+	}
+	
+	var mute_btn = document.getElementById("mutebtn");
+	var umute_btn = document.getElementById("umutebtn");
+	mute_btn.onclick = function() {muteAll(true);}
+	umute_btn.onclick = function() {muteAll(false);}
+	
+	muteSelector = document.getElementById("mutesel");
+	var solo_chk = document.getElementById("solochk");
+	muteSelector.onchange = function () {
+		if (init) {
+			if (solo_chk.checked)
+				solo(muteSelector.selectedIndex);
+			else
+				mute(muteSelector.selectedIndex);
+		}
+	}
+	
+	jmpSel = document.getElementById("posjump");
+	jmpSel.onchange = function () {
+		if (init)
+			posJmp(jmpSel.selectedIndex);
 	}
 }
