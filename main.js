@@ -770,6 +770,7 @@ function nextRow() {
 			patrep=reppos=0;
 			curpos++;
 		} else if (patjmp>=0) {
+			drawPos = -1;
 			curpos = patjmp;
 			currow=patrep=reppos=0;
 			repto=patjmp=-1;
