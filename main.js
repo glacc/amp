@@ -1148,7 +1148,7 @@ function drawScreen() {
 		if (drawPos < 64) {
 			i = drawPos;
 			var patPos = curpos + (fullRedraw ? 0 : 1);
-			if (patPos>=128) patPos = 0;
+			if (patPos>=songleng) patPos = 0;
 			while (i<targetDrawPos) {
 				j = 0;
 				context.fillStyle = "#ffffff";
