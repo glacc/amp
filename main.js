@@ -41,6 +41,7 @@ var pattern_swap = false;
 var drawPos = 0;
 var drawReq = false;
 var fullRedrawed = false;
+var redrawByFocus = false;
 
 var a = 0;
 
@@ -1099,7 +1100,8 @@ function drawScreen() {
 	}
 
 	var fullRedraw = drawPos < 0;
-	if (init&&curpos!=oldpos&&!fullRedraw) pattern_swap = !pattern_swap;
+	//if (init&&curpos!=oldpos&&!fullRedraw) pattern_swap = !pattern_swap;
+	if (init&&curpos!=oldpos) pattern_swap = !pattern_swap;
 		
 	pattern_canvas = pattern_swap ? pattern_canvas_b : pattern_canvas_a;
 	context = pattern_canvas.getContext("2d");
@@ -1406,20 +1408,21 @@ window.onload = function () {
 		desiredfps_num.oninput = fpsChange
 	}
 	
-	var mute_btn = document.getElementById("mutebtn");
+	var muteall_btn = document.getElementById("muteallbtn");
 	var umute_btn = document.getElementById("umutebtn");
-	mute_btn.onclick = function() {muteAll(true);}
+	muteall_btn.onclick = function() {muteAll(true);}
 	umute_btn.onclick = function() {muteAll(false);}
 	
+	var mute_btn = document.getElementById("mutebtn");
+	var solo_btn = document.getElementById("solobtn");
 	muteSelector = document.getElementById("mutesel");
-	var solo_chk = document.getElementById("solochk");
-	muteSelector.onchange = function () {
-		if (init) {
-			if (solo_chk.checked)
-				solo(muteSelector.selectedIndex);
-			else
-				mute(muteSelector.selectedIndex);
-		}
+	mute_btn.onclick = function () {
+		if (init)
+			mute(muteSelector.selectedIndex);
+	}
+	solo_btn.onclick = function () {
+		if (init)
+			solo(muteSelector.selectedIndex);
 	}
 	
 	jmpSel = document.getElementById("posjump");
@@ -1428,3 +1431,9 @@ window.onload = function () {
 			posJmp(jmpSel.selectedIndex);
 	}
 }
+
+/*
+window.onfocus = function () {
+	redrawByFocus = true;
+}
+*/
